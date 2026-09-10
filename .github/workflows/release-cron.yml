@@ -1,6 +1,14 @@
 name: Track upstream releases
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/**'
+      - 'patches/**'
+      - 'overlays/**'
+      - 'scripts/*sftp*'
+      - 'scripts/*release*'
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:

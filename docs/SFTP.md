@@ -41,7 +41,8 @@ requests and a higher timeout. SSH private-key authentication is not implemented
 ## Automated GitHub release
 
 `.github/workflows/release-cron.yml` runs every six hours at minute 17, and can
-also be started manually using **Track upstream releases → Run workflow**.
+also starts when release workflows or patches change on `master`, and can be
+started manually using **Track upstream releases → Run workflow**.
 Everything runs in GitHub Actions; no local scheduler or Codex task is required.
 
 1. Query the latest published, stable release of `appdev/siyuan-unlock`.
@@ -72,7 +73,7 @@ No `DOCKER_HUB_USER`, `DOCKER_HUB_PWD`, or original-repository marker is needed.
 Images publish only to `ghcr.io/lovitus/siyuan-unlock-sftp:vX.Y.Z` and `:latest` (lowercase).
 Configure the GHCR package's visibility if public unauthenticated pulls are wanted.
 
-Example (replace `owner/repo` with this repository's actual owner and name):
+Example for `lovitus/siyuan-unlock-sftp`:
 
 ```sh
 docker run -d --name siyuan \
