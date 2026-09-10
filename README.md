@@ -1,3 +1,9 @@
+# SiYuan Unlock + SFTP
+
+本分支增加 SFTP 云存储提供者，**必须指定远程 path**。GitHub Actions 每 6 小时跟踪
+`appdev/siyuan-unlock` 的正式 release，自动打补丁、按原矩阵构建并发布；镜像只推送到
+`ghcr.io/lovitus/siyuan-unlock-sftp`。配置、CI secrets 和验证方式见 [SFTP 与自动发布说明](docs/SFTP.md)。
+
 
 ### Docker 部署
 
@@ -11,8 +17,8 @@
 
 在服务器上伺服思源最简单的方案是通过 Docker 部署。
 
-* 镜像名称 `apkdv/siyuan-unlock`
-* [镜像地址](https://hub.docker.com/r/apkdv/siyuan-unlock)
+* 镜像名称 `ghcr.io/lovitus/siyuan-unlock-sftp`
+* 镜像地址：当前 GitHub 仓库的 Packages 页面（GHCR）
 
 #### 文件结构
 
@@ -27,7 +33,7 @@
 
 入口点在构建 Docker 镜像时设置：`ENTRYPOINT ["/opt/siyuan/entrypoint.sh"]`。该脚本允许更改将在容器内运行的用户的 `PUID` 和 `PGID`。这对于解决从主机挂载目录时的权限问题尤为重要。`PUID` 和 `PGID` 可以作为环境变量传递，这样在访问主机挂载的目录时就能更容易地确保正确的权限。
 
-使用 `docker run apkdv/siyuan-unlock` 运行容器时，请带入以下参数：
+使用 `docker run ghcr.io/lovitus/siyuan-unlock-sftp` 运行容器时，请带入以下参数：
 
 * `--workspace`：指定工作空间文件夹路径，在宿主机上通过 `-v` 挂载到容器中
 * `--accessAuthCode`：指定访问授权码
@@ -39,7 +45,7 @@ docker run -d \
   -v workspace_dir_host:workspace_dir_container \
   -p 6806:6806 \
   -e PUID=1001 -e PGID=1002 \
-  apkdv/siyuan-unlock \
+  ghcr.io/lovitus/siyuan-unlock-sftp \
   serve \
   --workspace=workspace_dir_container \
   --accessAuthCode=xxx
@@ -61,7 +67,7 @@ docker run -d \
   -v /siyuan/workspace:/siyuan/workspace \
   -p 6806:6806 \
   -e PUID=1001 -e PGID=1002 \
-  apkdv/siyuan-unlock \
+  ghcr.io/lovitus/siyuan-unlock-sftp \
   serve \
   --workspace=/siyuan/workspace/ \
   --accessAuthCode=xxx
@@ -75,7 +81,7 @@ docker run -d \
 version: "3.9"
 services:
   main:
-    image: apkdv/siyuan-unlock
+    image: ghcr.io/lovitus/siyuan-unlock-sftp
     command: ['serve', '--workspace=/siyuan/workspace/', '--accessAuthCode=${AuthCode}']
     ports:
       - 6806:6806
@@ -135,8 +141,6 @@ chown -R 1001:1002 /siyuan/workspace
 <a title="Releases" target="_blank" href="https://github.com/siyuan-note/appdev/releases"><img src="https://img.shields.io/github/release/siyuan-note/siyuan.svg?style=flat-square&color=9CF"></a>
 <a title="Downloads" target="_blank" href="https://github.com/siyuan-note/appdev/releases"><img src="https://img.shields.io/github/downloads/siyuan-note/appdev/total.svg?style=flat-square&color=blueviolet"></a>
 <br>
-<a title="Docker Pulls" target="_blank" href="https://hub.docker.com/r/apkdv/siyuan-unlock"><img src="https://img.shields.io/docker/pulls/b3log/siyuan.svg?style=flat-square&color=green"></a>
-<a title="Docker Image Size" target="_blank" href="https://hub.docker.com/r/apkdv/siyuan-unlock"><img src="https://img.shields.io/docker/image-size/b3log/siyuan.svg?style=flat-square&color=ff96b4"></a>
 <a title="Hits" target="_blank" href="https://github.com/siyuan-note/appdev"><img src="https://hits.b3log.org/siyuan-note/siyuan.svg"></a>
 <br>
 <a title="AGPLv3" target="_blank" href="https://www.gnu.org/licenses/agpl-3.0.txt"><img src="http://img.shields.io/badge/license-AGPLv3-orange.svg?style=flat-square"></a>
@@ -237,8 +241,8 @@ chown -R 1001:1002 /siyuan/workspace
 
 在服务器上伺服思源最简单的方案是通过 Docker 部署。
 
-* 镜像名称 `apkdv/siyuan-unlock`
-* [镜像地址](https://hub.docker.com/r/apkdv/siyuan-unlock)
+* 镜像名称 `ghcr.io/lovitus/siyuan-unlock-sftp`
+* 镜像地址：当前 GitHub 仓库的 Packages 页面（GHCR）
 
 #### 文件结构
 
@@ -253,7 +257,7 @@ chown -R 1001:1002 /siyuan/workspace
 
 入口点在构建 Docker 镜像时设置：`ENTRYPOINT ["/opt/siyuan/entrypoint.sh"]`。该脚本允许更改将在容器内运行的用户的 `PUID` 和 `PGID`。这对于解决从主机挂载目录时的权限问题尤为重要。`PUID` 和 `PGID` 可以作为环境变量传递，这样在访问主机挂载的目录时就能更容易地确保正确的权限。
 
-使用 `docker run apkdv/siyuan-unlock` 运行容器时，请带入以下参数：
+使用 `docker run ghcr.io/lovitus/siyuan-unlock-sftp` 运行容器时，请带入以下参数：
 
 * `--workspace`：指定工作空间文件夹路径，在宿主机上通过 `-v` 挂载到容器中
 * `--accessAuthCode`：指定访问授权码
@@ -265,7 +269,7 @@ docker run -d \
   -v workspace_dir_host:workspace_dir_container \
   -p 6806:6806 \
   -e PUID=1001 -e PGID=1002 \
-  apkdv/siyuan-unlock \
+  ghcr.io/lovitus/siyuan-unlock-sftp \
   --workspace=workspace_dir_container \
   --accessAuthCode=xxx
 ```
@@ -286,7 +290,7 @@ docker run -d \
   -v /siyuan/workspace:/siyuan/workspace \
   -p 6806:6806 \
   -e PUID=1001 -e PGID=1002 \
-  apkdv/siyuan-unlock \
+  ghcr.io/lovitus/siyuan-unlock-sftp \
   --workspace=/siyuan/workspace/ \
   --accessAuthCode=xxx
 ```
@@ -299,7 +303,7 @@ docker run -d \
 version: "3.9"
 services:
   main:
-    image: apkdv/siyuan-unlock
+    image: ghcr.io/lovitus/siyuan-unlock-sftp
     command: ['--workspace=/siyuan/workspace/', '--accessAuthCode=${AuthCode}']
     ports:
       - 6806:6806

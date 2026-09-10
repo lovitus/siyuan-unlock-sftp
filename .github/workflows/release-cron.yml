@@ -1,76 +1,88 @@
-name: release-cron
+name: Track upstream releases
 
 on:
   schedule:
-    - cron: "0 12 * * 2,5" # 每周二和周五的12点（UTC时间）
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: upstream-release
+  cancel-in-progress: false
+
 jobs:
-  create_release:
-    name: get version and create release
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      pending: ${{ steps.release.outputs.pending }}
+      version: ${{ steps.release.outputs.version }}
+      package_manager: ${{ steps.release.outputs.package_manager }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release detection
+        run: python3 scripts/test-release-tracking.py
+      - name: Check upstream published release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-upstream-release.py
+
+  desktop:
+    needs: check
+    if: needs.check.outputs.pending == 'true'
+    uses: ./.github/workflows/desktop-release.yml
+    with:
+      version: ${{ needs.check.outputs.version }}
+      packageManager: ${{ needs.check.outputs.package_manager }}
+    secrets: inherit
+
+  android:
+    needs: check
+    if: needs.check.outputs.pending == 'true'
+    uses: ./.github/workflows/release-android.yml
+    with:
+      version: ${{ needs.check.outputs.version }}
+      packageManager: ${{ needs.check.outputs.package_manager }}
+    secrets: inherit
+
+  ios:
+    needs: check
+    if: needs.check.outputs.pending == 'true'
+    uses: ./.github/workflows/release-ios.yml
+    with:
+      version: ${{ needs.check.outputs.version }}
+      packageManager: ${{ needs.check.outputs.package_manager }}
+    secrets: inherit
+
+  docker:
+    needs: check
+    if: needs.check.outputs.pending == 'true'
+    uses: ./.github/workflows/release-docker.yml
+    with:
+      version: ${{ needs.check.outputs.version }}
+    secrets: inherit
+
+  publish:
+    needs: [check, desktop, android, ios, docker]
     runs-on: ubuntu-latest
     steps:
-      - name: Verify official repository
-        shell: bash
-        env:
-          OFFICIAL_BUILD_MARKER: ${{ secrets.SIYUAN_UNLOCK_OFFICIAL_BUILD }}
-        run: |
-          if [[ "${GITHUB_REPOSITORY}" != "appdev/siyuan-unlock" || -z "${OFFICIAL_BUILD_MARKER}" ]]; then
-            echo "::error::This release workflow can only run in the official repository."
-            exit 1
-          fi
-
-      - name: version check
-        id: version
-        run: |
-          # 获取已经 release 的版本
-          releasedVersion=$(wget -qO- -t3 -T30 "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
-          # 获取最新代码的版本
-          packageJson=$(wget -qO- -t3 -T30 "https://raw.githubusercontent.com/siyuan-note/siyuan/master/app/package.json")
-          packageVersion=$(echo "${packageJson}" | grep "version" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
-          # 设置输出
-          if [ "${releasedVersion}" = "v${packageVersion}" ]; then
-            echo "release_version=0" >> $GITHUB_OUTPUT 
-          else
-            echo "release_version=v${packageVersion}" >> $GITHUB_OUTPUT 
-          fi
-
-          packageManager=$(echo "${packageJson}" | grep "packageManager" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
-          echo "package_manager=${packageManager}" >> $GITHUB_OUTPUT 
-
-          echo "releasedVersion: ${releasedVersion}"
-          echo "packageVersion: ${packageVersion}"
-          echo "packageManager: ${packageManager}"
-
-      - name: Create Release
-        id: create_release
-        uses: ncipollo/release-action@v1
-        if: ${{ steps.version.outputs.release_version != '0' }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
-          name: ${{ steps.version.outputs.release_version }}
-          tag: ${{ steps.version.outputs.release_version }}
-          body: "action release"
-          draft: false
-          prerelease: false
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: dispatch release
-        if: ${{ steps.version.outputs.release_version != '0' }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Promote successful image to latest
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
-          sudo apt install jq
-
-          response=$(curl --request GET --url https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows --header 'Accept: application/vnd.github+json' --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' --header 'X-GitHub-Api-Version: 2022-11-28')
-
-          androidId=$(echo "$response" | jq -r '.workflows | .[] | select(.path | contains("release-android.yml")) | .id')
-          pcId=$(echo "$response" | jq -r '.workflows | .[] | select(.path | contains("desktop-release.yml")) | .id')
-          dockerId=$(echo "$response" | jq -r '.workflows | .[] | select(.path | contains("release-docker.yml")) | .id')
-          iosId=$(echo "$response" | jq -r '.workflows | .[] | select(.path | contains("release-ios.yml")) | .id')
-
-
-          curl -X POST -H "Accept: application/vnd.github.v3+json" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${androidId}/dispatches" -d "{\"ref\": \"master\", \"inputs\": {\"version\": \"${{ steps.version.outputs.release_version }}\", \"packageManager\": \"${{ steps.version.outputs.package_manager }}\"}}"
-
-          curl -X POST -H "Accept: application/vnd.github.v3+json" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${pcId}/dispatches" -d "{\"ref\": \"master\", \"inputs\": {\"version\": \"${{ steps.version.outputs.release_version }}\", \"packageManager\": \"${{ steps.version.outputs.package_manager }}\"}}"
-
-          curl -X POST -H "Accept: application/vnd.github.v3+json" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${dockerId}/dispatches" -d "{\"ref\": \"master\", \"inputs\": {\"version\": \"${{ steps.version.outputs.release_version }}\" }}"
-
-          curl -X POST -H "Accept: application/vnd.github.v3+json" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${iosId}/dispatches" -d "{\"ref\": \"master\", \"inputs\": {\"version\": \"${{ steps.version.outputs.release_version }}\", \"packageManager\": \"${{ steps.version.outputs.package_manager }}\"}}"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker buildx imagetools create --tag "$image:latest" "$image:$VERSION"
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
