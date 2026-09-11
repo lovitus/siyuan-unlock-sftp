@@ -169,9 +169,6 @@ func (s *SFTP) ListObjects(prefix string) (map[string]*entity.ObjectInfo, error)
 				if info.Mode()&os.ModeSymlink != 0 {
 					return fmt.Errorf("SFTP object is a symbolic link")
 				}
-				if strings.Contains(info.Name(), ".sftp-") {
-					continue
-				}
 				name := path.Join(rel, info.Name())
 				if info.IsDir() {
 					if err := walk(path.Join(dir, info.Name()), name); err != nil {

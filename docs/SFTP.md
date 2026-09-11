@@ -30,6 +30,19 @@ remove cloud repositories through the existing cloud directory UI. Removing a
 repository only removes its `siyuan/repo` subtree. Object paths beneath the root
 must not contain symlinks. The root itself may resolve through a symlink.
 
+Uploads stage temporary files under `<path>/<cloud-name>/siyuan/.sftp-tmp/`,
+outside the `repo/` object and reference namespace, then rename them into place.
+The staging directory and repository must reside on the same filesystem for
+atomic rename. Interrupted uploads can leave staging files, but these are never
+interpreted as snapshots or objects. Successful uploads remove their staging
+file. No tag names are reserved based on the `.sftp-` substring.
+
+Older builds wrote temporary files beside their destination. Such legacy files
+cannot safely be distinguished from legitimate tags by name alone; this version
+does not automatically hide or delete them. If a legacy interrupted upload
+causes an invalid-reference error, inspect its content and actual snapshot
+references before removing it. Existing files are never guessed to be disposable.
+
 Uploads use temporary files plus rename; OpenSSH's `posix-rename@openssh.com`
 extension provides atomic replacement of existing references. Servers without
 that extension must support replacement with standard rename, or overwriting
@@ -96,3 +109,9 @@ pnpm run typecheck
 
 From this repository, run `python3 scripts/test-release-tracking.py` and
 `actionlint .github/workflows/{release-cron,release-docker,release-android,release-ios,desktop-release}.yml`.
+
+The **Test SFTP patch** workflow runs independently on patch changes and pull
+requests, even when the matching release already exists. It applies patches to
+the supported `v3.8.3` baseline and tests the real DejaVu sync → tagged backup →
+purge → restore lifecycle with an empty destination repository. It does not
+rebuild or replace published release assets.

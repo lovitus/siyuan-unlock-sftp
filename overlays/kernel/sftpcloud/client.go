@@ -149,7 +149,16 @@ func (s *SFTP) write(key string, data []byte, overwrite bool) error {
 		if _, err = rand.Read(nonce); err != nil {
 			return err
 		}
-		temp := fmt.Sprintf("%s.sftp-%x", p, nonce)
+		// Stage outside repo/: incomplete writes must never appear as objects or
+		// references, and legitimate tag names must not need filtering.
+		staging, err := s.remote(c, s.Dir+"/siyuan/.sftp-tmp")
+		if err != nil {
+			return err
+		}
+		if err = c.MkdirAll(staging); err != nil {
+			return err
+		}
+		temp := path.Join(staging, fmt.Sprintf("%x", nonce))
 		f, err := c.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY)
 		if err != nil {
 			return err
