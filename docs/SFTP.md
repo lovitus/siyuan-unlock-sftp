@@ -2,8 +2,9 @@
 
 This fork adds SFTP as provider `5`, on top of the unlock patches from
 `appdev/siyuan-unlock`. The patch is currently validated against SiYuan `v3.8.3`.
-The checked-in `app/` and `kernel/` trees are inherited upstream snapshots;
-release builds use the official version tag plus `patches/` and `overlays/`.
+This repository stores only patches, provider overlays, build/validation scripts,
+workflows and documentation. Release builds fetch the official version tag and
+apply `patches/` and `overlays/`; upstream source and dependencies are not vendored.
 
 ## SFTP configuration
 
@@ -54,7 +55,7 @@ requests and a higher timeout. SSH private-key authentication is not implemented
 ## Automated GitHub release
 
 `.github/workflows/release-cron.yml` runs every six hours at minute 17, and can
-also starts when release workflows or patches change on `master`, and can be
+also start when release workflows or patches change on `master`, and can be
 started manually using **Track upstream releases → Run workflow**.
 Everything runs in GitHub Actions; no local scheduler or Codex task is required.
 

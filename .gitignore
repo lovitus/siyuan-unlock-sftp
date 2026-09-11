@@ -1,46 +1,23 @@
-# Binaries for programs and plugins
-*.exe
-!app/elevator/elevator-*.exe
-*.dll
-*.so
-*.dylib
-*.aar
-*.jar
-*.syso
-.DS_Store
-.eslintcache
-app/node_modules
-app/stage/build
-app/build
-app/src/types/dist
-app/kernel*
-ios
-pprof
-
-# Test binary, build with `go test -c`
+# Generated upstream checkouts and build outputs
+/siyuan/
+/siyuan-android/
+/siyuan-ios/
+/siyuan-ios-out/
+/build/
+/dist/
+node_modules/
+__pycache__/
+*.py[cod]
 *.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
-electron/dist
+*.log
 
-# IDE
+# Local settings and credentials
+.DS_Store
 .idea/
 .vscode/
 .codex/
-
-# Log
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# NPM Package
-package-lock.json
-yarn.lock
-
-# Workflows
-**/__pycache__
+.env
+.env.*
+*.jks
+*.keystore
