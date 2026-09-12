@@ -33,6 +33,15 @@ jobs:
 
     steps:
 
+      - name: Validate release inputs
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          PACKAGE_MANAGER: ${{ inputs.packageManager }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$PACKAGE_MANAGER" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+(\+sha[0-9]+\.[a-fA-F0-9]+)?$ ]]
+
       - uses: actions/checkout@v4
         with:
           path: siyuan-note
@@ -53,7 +62,7 @@ jobs:
           git clone --depth=1 https://github.com/siyuan-note/siyuan-ios.git
           cd siyuan-ios
 
-          if [[ "${{ inputs.version }}" == "v3.8.3" ]]; then echo "Skipping xcode-26-load-item.patch for v3.8.3: patch targets pre-update iOS sources"; else
+          if [[ "$RELEASE_VERSION" == "v3.8.3" ]]; then echo "Skipping xcode-26-load-item.patch for v3.8.3: patch targets pre-update iOS sources"; else
             git apply ${{ github.workspace }}/siyuan-note/patches/siyuan-ios/xcode-26-load-item.patch
           fi
 
@@ -62,7 +71,7 @@ jobs:
           # 但代码里只有 AppIcon.appiconset，先复制一份看看后续会不会修复
           cp -r siyuan-ios/Assets.xcassets/AppIcon.appiconset siyuan-ios/Assets.xcassets/logo.appiconset
 
-          sed -i '' 's/MARKETING_VERSION =\(.*\)/MARKETING_VERSION = ${{ inputs.version }};/g' siyuan-ios.xcodeproj/project.pbxproj
+          sed -i '' "s/MARKETING_VERSION =\\(.*\\)/MARKETING_VERSION = ${RELEASE_VERSION};/g" siyuan-ios.xcodeproj/project.pbxproj
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER =\(.*\)/PRODUCT_BUNDLE_IDENTIFIER = com.ld246.siyuan.debug;/g' siyuan-ios.xcodeproj/project.pbxproj
           git status
           git diff
@@ -83,8 +92,10 @@ jobs:
           node-version: 24
 
       - name: Install Node pnpm
-        run: npm install -g ${{ inputs.packageManager }}
+        run: npm install -g "${PACKAGE_MANAGER}"
         working-directory: ${{ github.workspace }}/siyuan-note/siyuan/app
+        env:
+          PACKAGE_MANAGER: ${{ inputs.packageManager }}
 
       - name: Install Node Dependencies
         run: pnpm install --no-frozen-lockfile

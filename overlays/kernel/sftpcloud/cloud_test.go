@@ -147,8 +147,8 @@ func TestSFTPRoundTrip(t *testing.T) {
 	if err != nil || nested["ab/cdef"] == nil || nested["ab/cdef"].Size != 6 {
 		t.Fatal(nested, err)
 	}
-	repos, _, err := s.GetRepos()
-	if err != nil || len(repos) != 1 || repos[0].Name != "main" {
+	repos, size, err := s.GetRepos()
+	if err != nil || len(repos) != 1 || repos[0].Name != "main" || repos[0].Size != 6 || size != 6 {
 		t.Fatal(repos, err)
 	}
 	if _, err = s.DownloadObject("missing"); !errors.Is(err, cloud.ErrCloudObjectNotFound) {

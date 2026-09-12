@@ -48,6 +48,11 @@ def main():
         subprocess.run(['gh', 'release', 'create', tag, '--repo', repo,
                         '--target', os.environ['GITHUB_SHA'], '--draft', '--title', f'SiYuan SFTP {tag}',
                         '--notes', f"Based on {upstream['html_url']}. Adds SFTP cloud storage with an explicit remote path. Container images are published to GHCR."], check=True)
+    elif release['draft']:
+        # A retry may use a newer patch commit. Keep the draft tag target aligned
+        # with the source used by the build jobs and its eventual release assets.
+        subprocess.run(['gh', 'release', 'edit', tag, '--repo', repo,
+                        '--target', os.environ['GITHUB_SHA']], check=True)
     print(f'Building {tag}; the release stays draft until every build succeeds.')
 
 

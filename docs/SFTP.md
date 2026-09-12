@@ -28,8 +28,9 @@ home directory or creates the configured root.
 
 Repositories live under `<path>/<cloud-name>/siyuan/repo/`. You can create and
 remove cloud repositories through the existing cloud directory UI. Removing a
-repository only removes its `siyuan/repo` subtree. Object paths beneath the root
-must not contain symlinks. The root itself may resolve through a symlink.
+repository removes its `siyuan/repo` subtree and SFTP staging directory, while
+leaving unrelated files in the configured root untouched. Object paths beneath
+the root must not contain symlinks. The root itself may resolve through a symlink.
 
 Uploads stage temporary files under `<path>/<cloud-name>/siyuan/.sftp-tmp/`,
 outside the `repo/` object and reference namespace, then rename them into place.

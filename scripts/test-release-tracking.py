@@ -40,7 +40,10 @@ class ReleaseTrackingTest(unittest.TestCase):
     def test_draft_is_retried(self):
         output, mutations, _ = self.run_check({'draft': True})
         self.assertIn('pending=true', output)
-        self.assertFalse(mutations)
+        self.assertEqual(mutations[0].args[0], [
+            'gh', 'release', 'edit', 'v3.8.3', '--repo', 'example/siyuan',
+            '--target', 'abc',
+        ])
 
     def test_new_release_starts_draft(self):
         output, mutations, _ = self.run_check(error=404)

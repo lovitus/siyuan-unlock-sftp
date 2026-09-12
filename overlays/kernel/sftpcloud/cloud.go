@@ -91,8 +91,19 @@ func (s *SFTP) RemoveRepo(name string) error {
 		if e != nil {
 			return e
 		}
-		// Only delete our repository subtree; leave unrelated files in the root.
-		return removeTree(c, p)
+		// Only delete our repository subtree and our upload staging area; leave
+		// unrelated files in the configured root untouched.
+		if err := removeTreeIfExists(c, p); err != nil {
+			return err
+		}
+		staging, err := s.remote(c, name+"/siyuan/.sftp-tmp")
+		if err != nil {
+			return err
+		}
+		if err := removeTreeIfExists(c, staging); err != nil {
+			return err
+		}
+		return nil
 	})
 }
 func removeTree(c *sftp.Client, p string) error {
@@ -112,6 +123,14 @@ func removeTree(c *sftp.Client, p string) error {
 		}
 	}
 	return c.RemoveDirectory(p)
+}
+func removeTreeIfExists(c *sftp.Client, p string) error {
+	if _, err := c.Stat(p); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return removeTree(c, p)
 }
 func (s *SFTP) GetRepos() (repos []*cloud.Repo, size int64, err error) {
 	repos = []*cloud.Repo{}
@@ -142,12 +161,41 @@ func (s *SFTP) GetRepos() (repos []*cloud.Repo, size int64, err error) {
 			if !stat.IsDir() {
 				continue
 			}
-			repos = append(repos, &cloud.Repo{Name: info.Name(), Updated: stat.ModTime().Local().Format("2006-01-02 15:04:05")})
+			repoSize, e := treeSize(c, repo)
+			if e != nil {
+				return e
+			}
+			repos = append(repos, &cloud.Repo{Name: info.Name(), Size: repoSize, Updated: stat.ModTime().Local().Format("2006-01-02 15:04:05")})
+			size += repoSize
 		}
 		return nil
 	})
 	sort.Slice(repos, func(i, j int) bool { return repos[i].Name < repos[j].Name })
 	return
+}
+
+func treeSize(c *sftp.Client, dir string) (int64, error) {
+	entries, err := c.ReadDir(dir)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, entry := range entries {
+		if entry.Mode()&os.ModeSymlink != 0 {
+			return 0, fmt.Errorf("SFTP repository contains a symbolic link")
+		}
+		child := path.Join(dir, entry.Name())
+		if entry.IsDir() {
+			n, err := treeSize(c, child)
+			if err != nil {
+				return 0, err
+			}
+			total += n
+		} else {
+			total += entry.Size()
+		}
+	}
+	return total, nil
 }
 
 // ListObjects returns files relative to the prefix, including nested chunks

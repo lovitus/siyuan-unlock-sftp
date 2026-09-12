@@ -32,6 +32,15 @@ jobs:
 
     steps:
 
+      - name: Validate release inputs
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          PACKAGE_MANAGER: ${{ inputs.packageManager }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$PACKAGE_MANAGER" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+(\+sha[0-9]+\.[a-fA-F0-9]+)?$ ]]
+
       - uses: actions/checkout@v4
         with:
           path: siyuan-note
@@ -50,7 +59,7 @@ jobs:
 
           cd ..
 
-          git clone --branch ${{ inputs.version }} --depth=1 https://github.com/siyuan-note/siyuan-android.git
+          git clone --branch "$RELEASE_VERSION" --depth=1 https://github.com/siyuan-note/siyuan-android.git
           cd siyuan-android
 
           git apply --ignore-whitespace --verbose ${{ github.workspace }}/siyuan-note/patches/siyuan-android/debug-build.patch
@@ -75,8 +84,10 @@ jobs:
           node-version: 24
 
       - name: Install Node pnpm
-        run: npm install -g ${{ inputs.packageManager }}
+        run: npm install -g "${PACKAGE_MANAGER}"
         working-directory: ${{ github.workspace }}/siyuan-note/siyuan/app
+        env:
+          PACKAGE_MANAGER: ${{ inputs.packageManager }}
 
       - name: Install Node Dependencies
         run: pnpm install --no-frozen-lockfile
