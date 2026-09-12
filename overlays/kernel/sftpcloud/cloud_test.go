@@ -113,6 +113,15 @@ func TestRequiredPath(t *testing.T) {
 		})
 	}
 }
+
+func TestHostRejectsEmbeddedPort(t *testing.T) {
+	c := DefaultConfig()
+	c.Path, c.Username, c.HostKey = "/srv/siyuan", "user", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	c.Host = "example.com:2222"
+	if err := c.Normalize(); err == nil {
+		t.Fatal("accepted host with embedded port")
+	}
+}
 func TestSFTPRoundTrip(t *testing.T) {
 	s, cfg := testCloud(t)
 	if err := s.CreateRepo("main"); err != nil {

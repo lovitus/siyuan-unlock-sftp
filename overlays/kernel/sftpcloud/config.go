@@ -47,6 +47,9 @@ func (c *Config) Normalize() error {
 	if c.Host == "" || strings.ContainsAny(c.Host, "/\\ \t\r\n") {
 		return fmt.Errorf("SFTP host is required (hostname or IP, without scheme or port)")
 	}
+	if strings.Contains(c.Host, ":") && net.ParseIP(strings.Trim(c.Host, "[]")) == nil {
+		return fmt.Errorf("SFTP host must be a hostname or IP, without a port")
+	}
 	if c.Username == "" {
 		return fmt.Errorf("SFTP username is required")
 	}
