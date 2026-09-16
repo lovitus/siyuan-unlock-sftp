@@ -3,6 +3,10 @@ name: release-ios
 on:
   workflow_call:
     inputs:
+      artifactsOnly:
+        description: "Store build artifacts without updating a release"
+        type: boolean
+        default: false
       version:
         required: true
         type: string
@@ -11,6 +15,10 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      artifactsOnly:
+        description: "Store build artifacts without updating a release"
+        type: boolean
+        default: false
       version:
         description: "release version/tag"
         required: true
@@ -146,8 +154,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
+          ARTIFACTS_ONLY: ${{ inputs.artifactsOnly }}
         working-directory: ${{ github.workspace }}/siyuan-note/siyuan-ios-out
         run: |
           set -euo pipefail
           cp siyuan.ipa "siyuan-$VERSION-ios.ipa"
-          gh release upload "$VERSION" "siyuan-$VERSION-ios.ipa" --repo "$GITHUB_REPOSITORY" --clobber
+          if [[ "$ARTIFACTS_ONLY" != true ]]; then gh release upload "$VERSION" "siyuan-$VERSION-ios.ipa" --repo "$GITHUB_REPOSITORY" --clobber; fi
+
+      - name: Record build source
+        if: inputs.artifactsOnly
+        shell: bash
+        env:
+          PATCH_COMMIT: ${{ github.sha }}
+          SOURCE_TAG: ${{ inputs.version }}
+        run: |
+          printf 'patch_commit=%s\nsource_tag=%s\nrun_id=%s\n' "$PATCH_COMMIT" "$SOURCE_TAG" "$GITHUB_RUN_ID" > "$GITHUB_WORKSPACE/source-revision.txt"
+
+      - name: Save review build
+        if: inputs.artifactsOnly
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ github.workspace }}/siyuan-note/siyuan-ios-out/siyuan-*-ios.ipa
+            ${{ github.workspace }}/source-revision.txt

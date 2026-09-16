@@ -1,0 +1,68 @@
+name: Build and verify SFTP review
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Official SiYuan version to build
+        required: true
+        default: v3.8.3
+        type: string
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: review-build-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      manager: ${{ steps.source.outputs.manager }}
+    steps:
+      - id: source
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          manager=$(gh api "repos/siyuan-note/siyuan/contents/app/package.json?ref=$VERSION" --jq .content | base64 -d | jq -r .packageManager)
+          [[ "$manager" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+(\+sha[0-9]+\.[a-fA-F0-9]+)?$ ]]
+          echo "manager=$manager" >> "$GITHUB_OUTPUT"
+  desktop:
+    needs: resolve
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop-release.yml
+    with:
+      version: ${{ inputs.version }}
+      packageManager: ${{ needs.resolve.outputs.manager }}
+      artifactsOnly: true
+    secrets: inherit
+  android:
+    needs: resolve
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-android.yml
+    with:
+      version: ${{ inputs.version }}
+      packageManager: ${{ needs.resolve.outputs.manager }}
+      artifactsOnly: true
+    secrets: inherit
+  ios:
+    needs: resolve
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-ios.yml
+    with:
+      version: ${{ inputs.version }}
+      packageManager: ${{ needs.resolve.outputs.manager }}
+      artifactsOnly: true
+    secrets: inherit
+  docker:
+    needs: resolve
+    uses: ./.github/workflows/release-docker.yml
+    with:
+      version: ${{ inputs.version }}
+      imageTag: review-${{ github.sha }}
+    secrets: inherit

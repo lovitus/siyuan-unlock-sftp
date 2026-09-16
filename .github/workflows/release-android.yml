@@ -3,6 +3,10 @@ name: release-android
 on:
   workflow_call:
     inputs:
+      artifactsOnly:
+        description: "Store build artifacts without updating a release"
+        type: boolean
+        default: false
       version:
         required: true
         type: string
@@ -11,6 +15,10 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      artifactsOnly:
+        description: "Store build artifacts without updating a release"
+        type: boolean
+        default: false
       version:
         description: "release version/tag"
         required: true
@@ -155,6 +163,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
+          ARTIFACTS_ONLY: ${{ inputs.artifactsOnly }}
         working-directory: ${{ github.workspace }}/siyuan-note/siyuan-android
         run: |
           set -euo pipefail
@@ -164,4 +173,24 @@ jobs:
           test "${#appdev[@]}" -eq 1 && test -f "${appdev[0]}"
           cp "${original[0]}" "siyuan-unlock-$VERSION-android-arm64.apk"
           cp "${appdev[0]}" "siyuan-unlock-$VERSION-android-arm64-appdev.apk"
-          gh release upload "$VERSION" "siyuan-unlock-$VERSION-android-arm64.apk" "siyuan-unlock-$VERSION-android-arm64-appdev.apk" --repo "$GITHUB_REPOSITORY" --clobber
+          if [[ "$ARTIFACTS_ONLY" != true ]]; then gh release upload "$VERSION" "siyuan-unlock-$VERSION-android-arm64.apk" "siyuan-unlock-$VERSION-android-arm64-appdev.apk" --repo "$GITHUB_REPOSITORY" --clobber; fi
+
+      - name: Record build source
+        if: inputs.artifactsOnly
+        shell: bash
+        env:
+          PATCH_COMMIT: ${{ github.sha }}
+          SOURCE_TAG: ${{ inputs.version }}
+        run: |
+          printf 'patch_commit=%s\nsource_tag=%s\nrun_id=%s\n' "$PATCH_COMMIT" "$SOURCE_TAG" "$GITHUB_RUN_ID" > "$GITHUB_WORKSPACE/source-revision.txt"
+
+      - name: Save review build
+        if: inputs.artifactsOnly
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ github.workspace }}/siyuan-note/siyuan-android/siyuan-unlock-*-android-*.apk
+            ${{ github.workspace }}/source-revision.txt

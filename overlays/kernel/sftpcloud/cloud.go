@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/pkg/sftp"
@@ -19,7 +20,10 @@ import (
 
 type SFTP struct {
 	*cloud.BaseCloud
-	config Config
+	config    Config
+	lockMu    sync.Mutex
+	lockToken string
+	lockHeld  bool
 }
 
 var _ cloud.Cloud = (*SFTP)(nil)
@@ -55,19 +59,33 @@ func (s *SFTP) UploadObject(file string, overwrite bool) (int64, error) {
 	return s.UploadBytes(file, data, overwrite)
 }
 func (s *SFTP) UploadBytes(file string, data []byte, overwrite bool) (int64, error) {
-	if err := s.write(s.key(file), data, overwrite); err != nil {
+	var err error
+	if file == "lock-sync" {
+		err = s.writeSyncLock(data)
+	} else {
+		err = s.write(s.key(file), data, overwrite)
+	}
+	if err != nil {
 		return 0, err
 	}
 	return int64(len(data)), nil
 }
-func (s *SFTP) DownloadObject(file string) ([]byte, error) { return s.read(s.key(file)) }
+func (s *SFTP) DownloadObject(file string) ([]byte, error) {
+	if file == "lock-sync" {
+		return s.downloadSyncLock()
+	}
+	return s.read(s.key(file))
+}
 func (s *SFTP) RemoveObject(file string) error {
+	if file == "lock-sync" {
+		return s.removeSyncLock()
+	}
 	return parseErr(s.session(func(c *sftp.Client) error {
 		p, e := s.remote(c, s.key(file))
 		if e != nil {
 			return e
 		}
-		return c.Remove(p)
+		return s.withMutationGuard(c, func() error { return c.Remove(p) })
 	}))
 }
 func (s *SFTP) CreateRepo(name string) error {
@@ -79,7 +97,7 @@ func (s *SFTP) CreateRepo(name string) error {
 		if e != nil {
 			return e
 		}
-		return c.MkdirAll(p)
+		return s.withRepoMutation(c, name, func() error { return c.MkdirAll(p) })
 	})
 }
 func (s *SFTP) RemoveRepo(name string) error {
@@ -91,19 +109,21 @@ func (s *SFTP) RemoveRepo(name string) error {
 		if e != nil {
 			return e
 		}
-		// Only delete our repository subtree and our upload staging area; leave
-		// unrelated files in the configured root untouched.
-		if err := removeTreeIfExists(c, p); err != nil {
-			return err
-		}
-		staging, err := s.remote(c, name+"/siyuan/.sftp-tmp")
-		if err != nil {
-			return err
-		}
-		if err := removeTreeIfExists(c, staging); err != nil {
-			return err
-		}
-		return nil
+		return s.withRepoMutation(c, name, func() error {
+			// Only delete our repository subtree and our upload staging area; leave
+			// unrelated files in the configured root untouched.
+			if err := removeTreeIfExists(c, p); err != nil {
+				return err
+			}
+			staging, err := s.remote(c, name+"/siyuan/.sftp-tmp")
+			if err != nil {
+				return err
+			}
+			if err := removeTreeIfExists(c, staging); err != nil {
+				return err
+			}
+			return nil
+		})
 	})
 }
 func removeTree(c *sftp.Client, p string) error {

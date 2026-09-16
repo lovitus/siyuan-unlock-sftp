@@ -1,1 +1,3 @@
-*.patch text eol=lf
+# Unified-diff context includes a leading space before source tabs/blank lines.
+# prepare-sftp-source.sh checks whitespace in the resulting applied source.
+*.patch text eol=lf -whitespace

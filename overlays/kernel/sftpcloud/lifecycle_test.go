@@ -44,8 +44,10 @@ func TestSnapshotSurvivesPurgeAndRestores(t *testing.T) {
 	tags := []string{"backup.sftp-july", "backup.sftp-0123456789abcdef0123456789abcdef"}
 	for _, tag := range tags {
 		must(repo.AddTag(index.ID, tag))
-		_, _, _, err = repo.UploadTagIndex(tag, index.ID, ctx)
-		must(err)
+		must(s.WithLease(func() error {
+			_, _, _, err = repo.UploadTagIndex(tag, index.ID, ctx)
+			return err
+		}))
 	}
 	must(os.Remove(filepath.Join(data, "original.txt")))
 	must(os.WriteFile(filepath.Join(data, "current.txt"), []byte("current"), 0600))

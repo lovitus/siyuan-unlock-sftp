@@ -130,53 +130,74 @@ func (s *SFTP) readDir(key string) (infos []os.FileInfo, err error) {
 }
 func (s *SFTP) write(key string, data []byte, overwrite bool) error {
 	return parseErr(s.session(func(c *sftp.Client) error {
-		p, err := s.remote(c, key)
-		if err != nil {
+		return s.writeFile(c, key, data, overwrite, func(publish func() error) error {
+			return s.withMutationGuard(c, publish)
+		})
+	}))
+}
+
+// writeFile stages and publishes on an existing connection, including while
+// holding the server-side lock guard.
+func (s *SFTP) writeFile(c *sftp.Client, key string, data []byte, overwrite bool, commit func(func() error) error) error {
+	p, err := s.remote(c, key)
+	if err != nil {
+		return err
+	}
+	if !overwrite {
+		if _, err = c.Lstat(p); err == nil {
+			return nil
+		}
+		if !os.IsNotExist(err) {
 			return err
 		}
+	}
+	if err = c.MkdirAll(path.Dir(p)); err != nil {
+		return err
+	}
+	nonce := make([]byte, 16)
+	if _, err = rand.Read(nonce); err != nil {
+		return err
+	}
+	// Stage outside repo/: incomplete writes must never appear as objects or
+	// references, and legitimate tag names must not need filtering.
+	staging, err := s.remote(c, s.Dir+"/siyuan/.sftp-tmp")
+	if err != nil {
+		return err
+	}
+	if err = c.MkdirAll(staging); err != nil {
+		return err
+	}
+	temp := path.Join(staging, fmt.Sprintf("%x", nonce))
+	f, err := c.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+	if err != nil {
+		return err
+	}
+	defer c.Remove(temp)
+	_, err = f.Write(data)
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	publish := func() error {
+		// Recheck non-overwrite semantics under the guard after staging.
 		if !overwrite {
-			if _, err = c.Lstat(p); err == nil {
+			if _, err := c.Lstat(p); err == nil {
 				return nil
-			}
-			if !os.IsNotExist(err) {
+			} else if !os.IsNotExist(err) {
 				return err
 			}
 		}
-		if err = c.MkdirAll(path.Dir(p)); err != nil {
-			return err
-		}
-		nonce := make([]byte, 16)
-		if _, err = rand.Read(nonce); err != nil {
-			return err
-		}
-		// Stage outside repo/: incomplete writes must never appear as objects or
-		// references, and legitimate tag names must not need filtering.
-		staging, err := s.remote(c, s.Dir+"/siyuan/.sftp-tmp")
-		if err != nil {
-			return err
-		}
-		if err = c.MkdirAll(staging); err != nil {
-			return err
-		}
-		temp := path.Join(staging, fmt.Sprintf("%x", nonce))
-		f, err := c.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY)
-		if err != nil {
-			return err
-		}
-		defer c.Remove(temp)
-		_, err = f.Write(data)
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		// POSIX rename atomically replaces refs/locks. Never delete the destination
-		// first: readers must not observe a missing or partially uploaded object.
+		// Never delete the destination before rename.
 		if _, ok := c.HasExtension("posix-rename@openssh.com"); ok {
 			return c.PosixRename(temp, p)
 		}
 		return c.Rename(temp, p)
-	}))
+	}
+	if commit != nil {
+		return commit(publish)
+	}
+	return publish()
 }

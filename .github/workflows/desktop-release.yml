@@ -2,6 +2,10 @@ name: CD For SiYuan Unlock
 on:
   workflow_call:
     inputs:
+      artifactsOnly:
+        description: "Store build artifacts without updating a release"
+        type: boolean
+        default: false
       version:
         required: true
         type: string
@@ -10,12 +14,20 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      artifactsOnly:
+        description: "Store build artifacts without updating a release"
+        type: boolean
+        default: false
       version:
         description: "release version/tag"
         required: true
       packageManager:
         description: "pnpm@x.x.x"
         required: true
+
+defaults:
+  run:
+    shell: bash
 
 permissions:
   contents: write
@@ -24,6 +36,7 @@ jobs:
   build:
     runs-on: ${{ matrix.config.os }}
     strategy:
+      fail-fast: false
       matrix:
         config:
           - os: ubuntu-22.04
@@ -236,7 +249,8 @@ jobs:
         run: pnpm run ${{ matrix.config.electron_args }}
         working-directory: ${{ github.workspace }}/siyuan-note/siyuan/app
 
-      - uses: joutvhu/get-release@v1
+      - if: ${{ !inputs.artifactsOnly }}
+        uses: joutvhu/get-release@v1
         id: get_current_release
         with:
           tag_name: ${{ inputs.version }}
@@ -244,6 +258,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Electron App
+        if: ${{ !inputs.artifactsOnly }}
         uses: ncipollo/release-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -258,3 +273,23 @@ jobs:
           omitName: true
           tag: ${{ inputs.version }}
           replacesArtifacts: true
+
+      - name: Record build source
+        if: inputs.artifactsOnly
+        shell: bash
+        env:
+          PATCH_COMMIT: ${{ github.sha }}
+          SOURCE_TAG: ${{ inputs.version }}
+        run: |
+          printf 'patch_commit=%s\nsource_tag=%s\nrun_id=%s\n' "$PATCH_COMMIT" "$SOURCE_TAG" "$GITHUB_RUN_ID" > "$GITHUB_WORKSPACE/source-revision.txt"
+
+      - name: Save review build
+        if: inputs.artifactsOnly
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.config.suffix }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ github.workspace }}/siyuan-note/siyuan/app/build/siyuan-*-${{ matrix.config.suffix }}
+            ${{ github.workspace }}/source-revision.txt

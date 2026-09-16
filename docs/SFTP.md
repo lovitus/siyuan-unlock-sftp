@@ -53,6 +53,48 @@ upstream Cloud interface does not provide a lifecycle/Close hook. This bounds
 connection lifetime; high latency servers may benefit from fewer concurrent
 requests and a higher timeout. SSH private-key authentication is not implemented.
 
+## Concurrent synchronization and recovery
+
+SFTP lock acquisition rechecks `lock-sync` while holding an exclusive server-side
+directory, `<path>/<cloud-name>/siyuan/.sftp-lock-guard`. The same guard serializes
+refresh, release, object publication/deletion, and repository creation/removal.
+Each provider instance stamps its lock with a random owner token. Ownership is
+checked under the guard immediately before publishing a staged upload or deleting
+an object, so an instance that lost its lock cannot overwrite or delete the new
+owner's data. Upload staging remains parallel; the final checks and mutations
+are serialized. This adds SFTP round trips and has not yet been benchmarked on
+high-latency servers or large repositories.
+This closes the upstream read-missing-then-overwrite window that allowed two
+independent processes to enter sync together and lose an offline addition.
+A competing sync may fail to obtain the lock; retry after the other sync finishes.
+
+Upgrade **every client** accessing a shared SFTP repository before relying on
+this protection. Older builds do not honor the guard. This is a source fix, not
+a claim that previously published installation packages contain it.
+
+The guard is removed after each protected operation, not held for the whole sync
+or the whole upload. If a process crashes or loses its connection while holding it, a guard
+may remain. Subsequent lock operations fail closed. A failed guard removal is
+not retried on a fresh connection: the server might already have removed it and
+another client might now own a new guard at the same path.
+
+To recover a persistent guard error, stop all clients using this cloud repository
+and ensure no sync remains active. Inspect the exact repository's guard directory
+and remove it only if it is empty, using `rmdir` (never recursive deletion).
+Then restart synchronization. Do not remove a guard while another client could
+still be operating. Lock leases retain the 65-second expiry, but a new instance
+cannot bypass a live lock just because the device IDs match. This also protects
+administrative operations whose upstream IDs are shared strings such as `purge`.
+A restarted client may need to wait for the old lock's last refresh to expire
+before retrying. Once a new owner takes over, the old token cannot publish,
+delete, refresh, or release, even if the old process resumes. Clock differences
+can still cause premature or delayed takeover and failed sync attempts; keep
+client clocks synchronized.
+
+Remote lock JSON is size-limited and type-checked before passing it to DejaVu.
+Malformed locks cause synchronization to fail instead of panicking or silently
+removing unknown lock data. Inspect/repair them only after stopping all clients.
+
 ## Automated GitHub release
 
 `.github/workflows/release-cron.yml` runs every six hours at minute 17, and can
@@ -117,3 +159,45 @@ requests, even when the matching release already exists. It applies patches to
 the supported `v3.8.3` baseline and tests the real DejaVu sync → tagged backup →
 purge → restore lifecycle with an empty destination repository. It does not
 rebuild or replace published release assets.
+
+`TestTwoDeviceSync` additionally exercises normal bidirectional sync using two
+different device IDs, separate local repositories, and a shared SSH/SFTP test
+server. It checks initial download, reverse-direction edits, independent offline
+additions, and deletion propagation. Both workspaces contain initial data because
+DejaVu does not create an index for an empty data directory. This is a provider
+integration test, not a test of installed desktop/mobile release applications.
+`TestConcurrentLockExclusion` deterministically makes two independent processes
+observe an absent lock before either writes it, and requires exactly one sync to
+succeed. It fails with the old unconditional lock overwrite behavior.
+`TestIndependentProcessSync` checks concurrent offline additions, lock-contention
+retries, convergence, and a TCP-interrupted upload followed by client restart,
+lease expiry, retry, and byte-for-byte download verification on the other device.
+Lease expiry in this test is simulated by aging the isolated test server's lock
+timestamp, rather than sleeping for 65 seconds.
+`TestInterruptedUploadRecovery` separately verifies that a cut TCP connection
+cannot replace an existing complete object with a partial upload; a retry succeeds
+and partial staging files stay outside object enumeration.
+`TestExpiredOwnerCannotMutateRepository` and `TestTakeoverBeforePublish` verify
+that a replaced owner cannot mutate the repository, including when takeover
+happens after upload staging and before rename. Administrative operations also
+check the target repository's lock when it differs from the selected repository.
+`TestIndependentProcessConflictHistory` checks concurrent offline edits to the
+same file, convergence, a reported conflict, and preservation of the losing edit
+in history. `TestMalformedRemoteLockDoesNotPanic` exercises invalid JSON lock
+shapes through real DejaVu Sync calls and requires the original lock to remain.
+Tagged backup uploads now hold a refreshed lease across the complete operation
+through the model integration and `SFTP.WithLease`. The lifecycle test uses this
+lease, and `TestBackupLeaseExcludesOtherOperations` verifies that another backup
+or purge cannot acquire the lock between object uploads, including failure cleanup.
+Large repositories, high-latency servers, mixed old/new clients, and installed
+mobile applications still need separate validation.
+
+
+## Review builds
+
+The **Build and verify SFTP review** workflow builds the existing desktop,
+Android, iOS and container matrices from an explicit official version. It stores
+client packages as Actions artifacts with `source-revision.txt` identifying the
+patch commit, source tag, and run ID. Containers use the isolated GHCR tag
+`review-<full-patch-commit>`. Review runs do not overwrite a published release or
+promote the `latest` image. Scheduled stable-release behavior remains unchanged.
