@@ -201,3 +201,32 @@ client packages as Actions artifacts with `source-revision.txt` identifying the
 patch commit, source tag, and run ID. Containers use the isolated GHCR tag
 `review-<full-patch-commit>`. Review runs do not overwrite a published release or
 promote the `latest` image. Scheduled stable-release behavior remains unchanged.
+
+To reproduce the native-package smoke test, install `asyncssh` in a disposable
+Python virtual environment, then start the loopback-only test server:
+
+```sh
+python scripts/validation/asyncssh_server.py --directory /tmp/sftp-server-new
+```
+
+In another terminal, run the validator against an extracted package. Each output
+directory must be new; the script creates three isolated workspaces, starts and
+stops their kernels, and records endpoint status and artifact hashes in
+`report.json`. It initializes the unlock account through the same API the UI
+calls, requires a nonempty SFTP path, tests bidirectional document sync and
+removal, and restores a tagged backup to a fresh workspace after cloud purge.
+
+```sh
+python scripts/validation/verify_sftp_artifact.py \
+  --kernel /path/to/Resources/kernel/SiYuan-Kernel \
+  --resources /path/to/Resources \
+  --sftp-config /tmp/sftp-server-new/sftp.json \
+  --output /tmp/sftp-artifact-validation-new
+```
+
+These are separate native processes on one host, not tests on multiple physical
+devices. Only use the disposable server configuration with this validator: it
+creates a cloud repository, uploads test documents, and performs cloud cleanup.
+
+See the [2026-09-16 artifact validation record](validation/2026-09-16/README.md)
+for the tested commit, exact package hashes, checks, and validation limits.

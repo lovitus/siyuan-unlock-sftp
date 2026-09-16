@@ -1,0 +1,26 @@
+[
+  {
+    "bundle": "app/common.d6e4599677f0d3bf5918.js",
+    "save": true,
+    "sftp_api": true,
+    "purge": true
+  },
+  {
+    "bundle": "desktop/main.63014a2dfa092ab3c065.js",
+    "save": true,
+    "sftp_api": true,
+    "purge": true
+  },
+  {
+    "bundle": "export/637.js",
+    "save": true,
+    "sftp_api": true,
+    "purge": true
+  },
+  {
+    "bundle": "mobile/main.dc90d0e94ef996fd5e4b.js",
+    "save": true,
+    "sftp_api": true,
+    "purge": true
+  }
+]

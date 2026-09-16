@@ -1,0 +1,10 @@
+{
+  "file": "siyuan-v3.8.3-ios.ipa",
+  "sha256": "c673c161076ae50ca3ea9494fff4a66a3eae051dd4ae04fda2a20f7466f0268f",
+  "bytes": 128413977,
+  "zip_integrity": "passed",
+  "bundle_id": "com.ld246.siyuan.debug",
+  "validation": "static package inspection, no iOS runtime",
+  "executable": "Payload/siyuan-ios.app/siyuan-ios",
+  "sftp_marker_present": true
+}

@@ -1,0 +1,9 @@
+{
+  "file": "siyuan-3.8.3-linux.tar.gz",
+  "sha256": "39c87358ae77c5a05b5bd893d8ac19edf09ba1fd2086ca7a8e97fc4a95c7b458",
+  "bytes": 242965865,
+  "kernel": "siyuan-3.8.3-linux/resources/kernel/SiYuan-Kernel",
+  "elf_machine": 62,
+  "sftp_marker_present": true,
+  "validation": "archive and ELF inspection, no Linux runtime"
+}

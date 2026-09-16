@@ -1,0 +1,232 @@
+# Run against an extracted native CI package and a disposable SFTP server.
+# Uses fresh workspaces only; never pass a real user workspace as --output.
+import argparse, hashlib, json, os, secrets, socket, subprocess, time, urllib.request
+from pathlib import Path
+
+# The normal UI initializes the local unlock account with getCloudUser.
+# Reproduce that setup before testing API-driven synchronization.
+p = argparse.ArgumentParser()
+p.add_argument("--kernel", required=True)
+p.add_argument("--resources", required=True)
+p.add_argument("--sftp-config", required=True)
+p.add_argument("--output", required=True)
+args = p.parse_args()
+output = Path(args.output)
+output.mkdir(parents=True, exist_ok=False)
+sftp = json.loads(Path(args.sftp_config).read_text())
+processes = []
+events = []
+report = {
+    "kernel": str(Path(args.kernel).resolve()),
+    "kernel_sha256": hashlib.sha256(Path(args.kernel).read_bytes()).hexdigest(),
+    "sftp_server": "AsyncSSH standalone, localhost, password authentication",
+    "events": events,
+}
+
+
+def call(d, endpoint, data=None, expect=0):
+    req = urllib.request.Request(
+        d["url"] + endpoint,
+        data=json.dumps(data or {}).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Token " + d["token"],
+        },
+    )
+    with urllib.request.urlopen(req, timeout=120) as response:
+        result = json.load(response)
+    events.append(
+        {"device": d["name"], "endpoint": endpoint, "code": result.get("code")}
+    )
+    print(d["name"], endpoint, result.get("code"), flush=True)
+    if expect is not None and result.get("code") != expect:
+        raise RuntimeError(endpoint + ": " + str(result))
+    return result.get("data")
+
+
+def launch(name):
+    ws = output / name
+    ws.mkdir()
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    log = (output / (name + ".log")).open("wb")
+    proc = subprocess.Popen(
+        [
+            args.kernel,
+            "serve",
+            "--workspace",
+            str(ws),
+            "--wd",
+            args.resources,
+            "--port",
+            str(port),
+            "--accessAuthCode",
+            secrets.token_hex(16),
+            "--lang",
+            "en_US",
+        ],
+        stdout=log,
+        stderr=subprocess.STDOUT,
+    )
+    processes.append((proc, log))
+    d = {"name": name, "ws": ws, "url": f"http://127.0.0.1:{port}", "token": ""}
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(
+                name + " exited; inspect " + str(output / (name + ".log"))
+            )
+        try:
+            conf = json.loads((ws / "conf/conf.json").read_text())
+            d["token"] = conf["api"]["token"]
+            with urllib.request.urlopen(
+                d["url"] + "/api/system/bootProgress", timeout=2
+            ) as r:
+                progress = json.load(r)
+            if progress.get("data", {}).get("progress", 0) >= 100:
+                return d
+        except (OSError, ValueError, KeyError):
+            pass
+        time.sleep(0.3)
+    raise TimeoutError("kernel boot: " + name)
+
+
+def waitfor(fn, label):
+    deadline = time.monotonic() + 35
+    while time.monotonic() < deadline:
+        if fn():
+            return
+        time.sleep(0.3)
+    raise AssertionError(label)
+
+
+try:
+    a, b = launch("a"), launch("b")
+    cloud = "review" + secrets.token_hex(3)
+    for d in (a, b):
+        call(d, "/api/setting/getCloudUser")
+        call(d, "/api/sync/setSyncEnable", {"enabled": False})
+        call(
+            d,
+            "/api/repo/initRepoKeyFromPassphrase",
+            {"pass": "isolated artifact validation passphrase"},
+        )
+        call(
+            d,
+            "/api/sync/setSyncProviderSFTP",
+            {"sftp": dict(sftp, path="")},
+            expect=None,
+        )
+        assert events[-1]["code"] != 0, "empty SFTP path was accepted"
+        call(d, "/api/sync/setSyncProviderSFTP", {"sftp": sftp})
+        call(d, "/api/sync/setSyncProvider", {"provider": 5})
+        call(d, "/api/sync/setSyncMode", {"mode": 2})
+    call(a, "/api/sync/createCloudSyncDir", {"name": cloud})
+    for d in (a, b):
+        call(d, "/api/sync/setCloudSyncDir", {"name": cloud})
+        call(d, "/api/sync/setSyncEnable", {"enabled": True})
+    notebook = call(
+        a, "/api/notebook/createNotebook", {"name": "SFTP artifact validation"}
+    )
+    notebook = notebook["notebook"]["id"] if "notebook" in notebook else notebook["id"]
+    doc = call(
+        a,
+        "/api/filetree/createDocWithMd",
+        {
+            "notebook": notebook,
+            "path": "/SFTP verification",
+            "markdown": "artifact-original-A",
+        },
+    )
+    time.sleep(1)
+    call(a, "/api/sync/performSync")
+    call(b, "/api/sync/performSync")
+    docpath = Path("data") / notebook / (doc + ".sy")
+    waitfor(lambda: (b["ws"] / docpath).exists(), "A document missing on B")
+    assert "artifact-original-A" in (b["ws"] / docpath).read_text()
+    call(
+        b,
+        "/api/block/appendBlock",
+        {"parentID": doc, "dataType": "markdown", "data": "artifact-update-B"},
+    )
+    time.sleep(1)
+    call(b, "/api/sync/performSync")
+    call(a, "/api/sync/performSync")
+    waitfor(
+        lambda: "artifact-update-B" in (a["ws"] / docpath).read_text(),
+        "B edit missing on A",
+    )
+    assert json.loads((a["ws"] / docpath).read_text()) == json.loads(
+        (b["ws"] / docpath).read_text()
+    )
+    call(a, "/api/repo/createSnapshot", {"memo": "artifact SFTP backup"})
+    snapshots = call(a, "/api/repo/getRepoSnapshots", {"page": 1})
+    snapshot = snapshots["snapshots"][0]["id"]
+    call(a, "/api/repo/tagSnapshot", {"id": snapshot, "name": "artifact-check"})
+    call(a, "/api/repo/uploadCloudSnapshot", {"id": snapshot, "tag": "artifact-check"})
+    call(
+        b, "/api/repo/downloadCloudSnapshot", {"id": snapshot, "tag": "artifact-check"}
+    )
+    call(
+        a, "/api/filetree/removeDoc", {"notebook": notebook, "path": "/" + doc + ".sy"}
+    )
+    call(a, "/api/sync/performSync")
+    call(b, "/api/sync/performSync")
+    waitfor(lambda: not (b["ws"] / docpath).exists(), "deletion missing on B")
+    call(a, "/api/repo/purgeCloudRepo")
+    call(
+        b, "/api/repo/downloadCloudSnapshot", {"id": snapshot, "tag": "artifact-check"}
+    )
+    c = launch("c")
+    call(c, "/api/setting/getCloudUser")
+    call(c, "/api/sync/setSyncEnable", {"enabled": False})
+    call(
+        c,
+        "/api/repo/initRepoKeyFromPassphrase",
+        {"pass": "isolated artifact validation passphrase"},
+    )
+    call(c, "/api/sync/setSyncProviderSFTP", {"sftp": sftp})
+    call(c, "/api/sync/setSyncProvider", {"provider": 5})
+    call(c, "/api/sync/setCloudSyncDir", {"name": cloud})
+    assert not (c["ws"] / docpath).exists()
+    call(
+        c, "/api/repo/downloadCloudSnapshot", {"id": snapshot, "tag": "artifact-check"}
+    )
+    call(c, "/api/repo/checkoutRepo", {"id": snapshot})
+    waitfor(
+        lambda: (c["ws"] / docpath).exists(), "empty workspace restore missing document"
+    )
+    restored = (c["ws"] / docpath).read_text()
+    assert "artifact-original-A" in restored and "artifact-update-B" in restored
+    report.update(
+        status="passed",
+        cloud=cloud,
+        document=doc,
+        snapshot=snapshot,
+        checks=[
+            "reject empty SFTP path",
+            "A to B document sync",
+            "B to A edit sync",
+            "equal document JSON",
+            "tag backup upload/download",
+            "deletion propagation",
+            "tag download after cloud purge",
+            "restore into fresh third workspace after purge",
+        ],
+    )
+except BaseException as e:
+    report.update(status="failed", error=str(e))
+    raise
+finally:
+    for proc, log in processes:
+        proc.terminate()
+    for proc, log in processes:
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        log.close()
+    (output / "report.json").write_text(json.dumps(report, indent=2))
+    print(json.dumps({k: v for k, v in report.items() if k != "events"}, indent=2))

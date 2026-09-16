@@ -1,0 +1,22 @@
+[
+  {
+    "asset": "siyuan-unlock-v3.8.3-android-arm64.apk",
+    "bytes": 92792254,
+    "sha256": "c7aa1105b33f650ab7a108109d2694faecad5b189da5dbff38fb01b9aee0c71f",
+    "zip_integrity": true,
+    "kernel_libraries": [
+      "lib/arm64-v8a/libgojni.so"
+    ],
+    "sftp_fencing_code_present": true
+  },
+  {
+    "asset": "siyuan-unlock-v3.8.3-android-arm64-appdev.apk",
+    "bytes": 92792266,
+    "sha256": "8c2d6bf36d539a63876b2c079804b3001278987078a0449974492d91dc5064de",
+    "zip_integrity": true,
+    "kernel_libraries": [
+      "lib/arm64-v8a/libgojni.so"
+    ],
+    "sftp_fencing_code_present": true
+  }
+]
