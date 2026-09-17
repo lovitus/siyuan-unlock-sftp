@@ -1,4 +1,4 @@
-# Published container execution — 2026-09-17
+# Published container and Windows execution — 2026-09-17
 
 ## Tested artifact and results
 
@@ -49,11 +49,51 @@ Its verification checks both default startup/PUID ownership and the normal and
 delayed SFTP lifecycle cases. It publishes an isolated review tag, not a formal
 release or `latest` promotion.
 
+### Isolated command-fix verification
+
+Before waiting for the full matrix rebuild, a local derivative was built from
+the immutable published image above with only `CMD ["serve"]` changed. It was
+not pushed to a registry. With the required random Docker access code configured,
+the default command booted, used the mounted workspace, and respected PUID.
+All nine SFTP lifecycle/restart checks also passed using that derivative.
+
+- [Successful CI](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35197792767).
+- [Default command report](container-command-fix.json).
+- [SFTP lifecycle report](container-command-fix-lifecycle.json).
+
+An initial derivative probe omitted the required `SIYUAN_ACCESS_AUTH_CODE` and
+was correctly rejected by the application. The probe was fixed to supply a
+random access code; no additional product change was needed. The rebuild was
+already running with an older probe, so a `workflow_run` follow-up now verifies
+the completed image with the current harness after requiring its build job to
+succeed. A derivative pass does not substitute for validating the rebuilt image.
+
+## Windows native package execution
+
+[Windows CI](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35197988857)
+downloaded `desktop-win.exe` from review build `35079166149`, checked its recorded
+patch revision, extracted the installer, and executed its actual AMD64 kernel on
+Windows Server 2025. An independent AsyncSSH server and three fresh workspaces
+were used. All eight native lifecycle assertions passed, including both sync
+directions, equal document JSON, deletion, tagged backup transfer, cloud cleanup,
+and restoration into a fresh third workspace.
+
+The first Windows attempt exposed the Python harness's reliance on the system
+text encoding when reading UTF-8 workspace JSON. The harness now reads these
+files explicitly as UTF-8 and includes the last readiness error on boot timeout.
+The passing rerun used the same unmodified packaged kernel.
+
+See [runtime evidence](windows-native.json) and [installer provenance and
+hash](windows-provenance.json). This tests independent native processes on a
+Windows runner; it does not yet prove Windows/macOS communication with the same
+live SFTP server, or interactive Windows UI behavior.
+
 ## Remaining scope
 
 - Await the rebuilt image's default-startup and lifecycle results.
-- Cross-platform clients using the same live SFTP server still need validation;
-  no Windows/Android device has been connected in this task.
+- Cross-platform clients using the same live SFTP server still need validation.
+  Windows native execution now passed independently; Android runtime and mobile
+  suspension remain untested.
 - The container execution above covers AMD64. Manifest presence and compilation
   for other architectures are not runtime validation of those architectures.
 - A 16 MiB asset with injected I/O delay does not cover very large repositories,

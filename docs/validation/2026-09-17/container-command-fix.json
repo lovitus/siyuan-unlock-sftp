@@ -1,0 +1,15 @@
+{
+  "image": "sftp-command-fix-validation",
+  "command_override": false,
+  "status": "passed",
+  "base_image": "ghcr.io/lovitus/siyuan-unlock-sftp@sha256:38e39d9c606f0cbebda39d6fd038406e30974dc4dcf3609e84a502681669dc63",
+  "local_derivative_cmd": [
+    "serve"
+  ],
+  "checks": [
+    "original ENTRYPOINT and CMD boot",
+    "mounted workspace used",
+    "PUID ownership respected"
+  ],
+  "run_id": 35197792767
+}
