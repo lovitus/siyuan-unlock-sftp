@@ -1,5 +1,8 @@
 name: Verify published SFTP container
 on:
+  workflow_run:
+    workflows: ['Build and verify container review']
+    types: [completed]
   workflow_call:
     inputs:
       revision:
@@ -25,22 +28,32 @@ on:
         type: string
 permissions:
   contents: read
+  actions: read
 jobs:
   smoke:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'master')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        profile: ${{ inputs.delayed && fromJSON('["normal", "delayed-io"]') || fromJSON('["normal"]') }}
+        profile: ${{ (inputs.delayed || github.event_name == 'workflow_run') && fromJSON('["normal", "delayed-io"]') || fromJSON('["normal"]') }}
     steps:
+      - name: Require a successful image build before automatic verification
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN/jobs" --jq '.jobs[] | select(.name == "build / build") | .conclusion' | grep -qx success
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Pull and verify published image
         env:
-          REVISION: ${{ inputs.revision }}
+          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           [[ "$REVISION" =~ ^[a-f0-9]{40}$ ]]
