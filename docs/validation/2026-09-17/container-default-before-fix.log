@@ -1,0 +1,6 @@
+Creating group siyuan (1001)
+Creating user siyuan (PUID: 1001, PGID: 1001)
+Adjusting ownership of /opt/siyuan, /home/siyuan/, and /siyuan/workspace
+Starting SiYuan with UID:1001 and GID:1001 in workspace /siyuan/workspace
+Error: unknown command "/opt/siyuan/kernel" for "kernel"
+Run 'kernel --help' for usage.
