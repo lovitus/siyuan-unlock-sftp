@@ -1,0 +1,80 @@
+name: Verify published Windows SFTP package
+on:
+  workflow_dispatch:
+    inputs:
+      buildRun:
+        description: Review build containing desktop-win.exe
+        type: string
+        required: true
+        default: '35079166149'
+      revision:
+        description: Exact source revision of the package
+        type: string
+        required: true
+        default: a54ed858544f3d9fd625c62e09db25914f55b837
+permissions:
+  contents: read
+  actions: read
+jobs:
+  smoke:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download and extract exact Windows package
+        env:
+          BUILD_RUN: ${{ inputs.buildRun }}
+          REVISION: ${{ inputs.revision }}
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:BUILD_RUN -notmatch '^\d+$' -or $env:REVISION -notmatch '^[a-f0-9]{40}$') { throw 'Invalid inputs' }
+          gh run download $env:BUILD_RUN --repo $env:GITHUB_REPOSITORY --name desktop-win.exe --dir "$env:RUNNER_TEMP/package"
+          if ($LASTEXITCODE -ne 0) { throw 'Artifact download failed' }
+          $provenance = Get-Content "$env:RUNNER_TEMP/package/source-revision.txt" -Raw
+          if (-not $provenance.Contains("patch_commit=$env:REVISION")) { throw 'Package revision mismatch' }
+          $installer = @(Get-ChildItem "$env:RUNNER_TEMP/package" -Recurse -Filter '*.exe')
+          if ($installer.Count -ne 1) { throw 'Expected exactly one installer' }
+          7z x $installer[0].FullName "-o$env:RUNNER_TEMP/extracted" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Installer extraction failed' }
+          $payload = @(Get-ChildItem "$env:RUNNER_TEMP/extracted" -Recurse -Filter 'app-64.7z')
+          if ($payload.Count -eq 1) {
+            7z x $payload[0].FullName "-o$env:RUNNER_TEMP/app" -y
+            if ($LASTEXITCODE -ne 0) { throw 'Payload extraction failed' }
+          }
+          $kernel = @(Get-ChildItem "$env:RUNNER_TEMP" -Recurse -Filter 'SiYuan-Kernel.exe')
+          if ($kernel.Count -ne 1) { throw "Expected one packaged kernel, found $($kernel.Count)" }
+          "SFTP_KERNEL=$($kernel[0].FullName)" >> $env:GITHUB_ENV
+          "SFTP_RESOURCES=$($kernel[0].Directory.Parent.FullName)" >> $env:GITHUB_ENV
+          @{source_revision=$env:REVISION; build_run=$env:BUILD_RUN; installer_sha256=(Get-FileHash $installer[0].FullName -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/package-provenance.json"
+      - name: Run packaged Windows kernel against independent SFTP server
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install asyncssh
+          if ($LASTEXITCODE -ne 0) { throw 'Python dependency installation failed' }
+          $server = Start-Process python -ArgumentList @('scripts/validation/asyncssh_server.py', '--directory', "$env:RUNNER_TEMP/sftp-server") -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/sftp-server.log" -RedirectStandardError "$env:RUNNER_TEMP/sftp-server-error.log"
+          try {
+            for ($i=0; $i -lt 60; $i++) {
+              if (Test-Path "$env:RUNNER_TEMP/sftp-server/sftp.json") { break }
+              if ($server.HasExited) { throw 'SFTP server exited' }
+              Start-Sleep -Seconds 1
+            }
+            python scripts/validation/verify_sftp_artifact.py --kernel "$env:SFTP_KERNEL" --resources "$env:SFTP_RESOURCES" --sftp-config "$env:RUNNER_TEMP/sftp-server/sftp.json" --output "$env:RUNNER_TEMP/sftp-windows-validation"
+            if ($LASTEXITCODE -ne 0) { throw 'Windows SFTP validation failed' }
+          } finally {
+            Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-runtime-validation
+          path: |
+            ${{ runner.temp }}/sftp-windows-validation/report.json
+            ${{ runner.temp }}/sftp-windows-validation/*.log
+            ${{ runner.temp }}/sftp-server*.log
+            ${{ runner.temp }}/package-provenance.json
