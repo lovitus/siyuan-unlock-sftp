@@ -187,6 +187,12 @@ try:
     docpath = Path("data") / notebook / (doc + ".sy")
     waitfor(lambda: (b["ws"] / docpath).exists(), "A document missing on B")
     assert "artifact-original-A" in (b["ws"] / docpath).read_text()
+    # Sync writes files before its asynchronous application index is ready.
+    waitfor(
+        lambda: call(b, "/api/block/getBlockInfo", {"id": doc}, expect=None)
+        is not None,
+        "synced document never became available in B's block index",
+    )
     call(
         b,
         "/api/block/appendBlock",
