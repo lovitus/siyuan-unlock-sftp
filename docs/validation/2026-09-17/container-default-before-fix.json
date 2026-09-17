@@ -1,0 +1,8 @@
+{
+  "image": "ghcr.io/lovitus/siyuan-unlock-sftp@sha256:38e39d9c606f0cbebda39d6fd038406e30974dc4dcf3609e84a502681669dc63",
+  "command_override": false,
+  "status": "failed",
+  "error": "Default image command did not finish booting",
+  "run_id": 35196964788,
+  "patch_commit": "a54ed858544f3d9fd625c62e09db25914f55b837"
+}

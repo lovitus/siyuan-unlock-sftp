@@ -11,13 +11,15 @@
 
 ## Build status snapshot
 
-At 2026-09-16 09:49 UTC, all six desktop jobs, Android, and iOS succeeded.
-The Docker job was still building the preserved four-platform matrix
-(`linux/amd64`, `linux/arm64`, `linux/arm/v7`, `linux/arm/v8`). Its expected tag is
+The complete review build succeeded, including all six desktop jobs, Android,
+iOS, and the preserved four-platform Docker matrix (`linux/amd64`, `linux/arm64`,
+`linux/arm/v7`, `linux/arm/v8`). The published image is
 `ghcr.io/lovitus/siyuan-unlock-sftp:review-a54ed858544f3d9fd625c62e09db25914f55b837`.
-The image was not yet published or runtime-validated at this snapshot; do not
-interpret the client results below as a successful container build. The linked
-Actions run is authoritative for later status.
+Its index digest is
+`sha256:38e39d9c606f0cbebda39d6fd038406e30974dc4dcf3609e84a502681669dc63`.
+All four platform configurations carry the matching source revision label.
+See [2026-09-17 container runtime validation](../2026-09-17/README.md) for the
+subsequent execution results.
 
 ## Review fixes included in this build
 

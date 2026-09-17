@@ -1,0 +1,332 @@
+{
+  "runtime": "docker",
+  "sftp_server": "AsyncSSH standalone, localhost, password authentication",
+  "events": [
+    {
+      "device": "a",
+      "endpoint": "/api/setting/getCloudUser",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/setSyncEnable",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/repo/initRepoKeyFromPassphrase",
+      "code": 0,
+      "seconds": 2.149
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/setSyncProviderSFTP",
+      "code": -1,
+      "seconds": 0.001
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/setSyncProviderSFTP",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/setSyncProvider",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/setSyncMode",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/setting/getCloudUser",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/setSyncEnable",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/repo/initRepoKeyFromPassphrase",
+      "code": 0,
+      "seconds": 2.145
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/setSyncProviderSFTP",
+      "code": -1,
+      "seconds": 0.001
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/setSyncProviderSFTP",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/setSyncProvider",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/setSyncMode",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/createCloudSyncDir",
+      "code": 0,
+      "seconds": 0.46
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/setCloudSyncDir",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/setSyncEnable",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/setCloudSyncDir",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/setSyncEnable",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/notebook/createNotebook",
+      "code": 0,
+      "seconds": 0.105
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/filetree/createDocWithMd",
+      "code": 0,
+      "seconds": 0.257
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/performSync",
+      "code": 0,
+      "seconds": 2.494
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/performSync",
+      "code": 0,
+      "seconds": 2.74
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/block/getBlockInfo",
+      "code": -1,
+      "seconds": 0.001
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/block/getBlockInfo",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/block/appendBlock",
+      "code": 0,
+      "seconds": 0.052
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/performSync",
+      "code": 0,
+      "seconds": 2.449
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/performSync",
+      "code": 0,
+      "seconds": 2.406
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/performSync",
+      "code": 0,
+      "seconds": 16.213
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/performSync",
+      "code": 0,
+      "seconds": 22.951
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/repo/createSnapshot",
+      "code": 0,
+      "seconds": 0.053
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/repo/getRepoSnapshots",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/repo/tagSnapshot",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/repo/uploadCloudSnapshot",
+      "code": 0,
+      "seconds": 0.943
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/repo/downloadCloudSnapshot",
+      "code": 0,
+      "seconds": 0.281
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/filetree/removeDoc",
+      "code": 0,
+      "seconds": 0.054
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/sync/performSync",
+      "code": 0,
+      "seconds": 2.277
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/sync/performSync",
+      "code": 0,
+      "seconds": 1.511
+    },
+    {
+      "device": "a",
+      "endpoint": "/api/repo/purgeCloudRepo",
+      "code": 0,
+      "seconds": 3.115
+    },
+    {
+      "device": "b",
+      "endpoint": "/api/repo/downloadCloudSnapshot",
+      "code": 0,
+      "seconds": 0.282
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/setting/getCloudUser",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/sync/setSyncEnable",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/repo/initRepoKeyFromPassphrase",
+      "code": 0,
+      "seconds": 2.146
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/sync/setSyncProviderSFTP",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/sync/setSyncProvider",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/sync/setCloudSyncDir",
+      "code": 0,
+      "seconds": 0.002
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/repo/downloadCloudSnapshot",
+      "code": 0,
+      "seconds": 22.401
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/repo/checkoutRepo",
+      "code": 0,
+      "seconds": 0.001
+    },
+    {
+      "device": "c",
+      "endpoint": "/api/repo/downloadCloudSnapshot",
+      "code": 0,
+      "seconds": 0.281
+    }
+  ],
+  "image": {
+    "Id": "sha256:7e0cd492555937d950f61689205701b861ae12c6d034fc750e518ed8da1b578f",
+    "RepoDigests": [
+      "ghcr.io/lovitus/siyuan-unlock-sftp@sha256:38e39d9c606f0cbebda39d6fd038406e30974dc4dcf3609e84a502681669dc63"
+    ],
+    "Architecture": "amd64",
+    "Os": "linux"
+  },
+  "asset": {
+    "bytes": 16777216,
+    "sha256": "b1a6af1c87a35611912492fdb00f3cca0ddde0c06fb45d9d8f262c29529c2714"
+  },
+  "status": "passed",
+  "cloud": "review0c9462",
+  "document": "20260917155328-adot6ve",
+  "snapshot": "afb3eabac69de0710b2d80238706caee55f43190",
+  "checks": [
+    "reject empty SFTP path",
+    "A to B document sync",
+    "B to A edit sync",
+    "equal document JSON",
+    "tag backup upload/download",
+    "deletion propagation",
+    "tag download after cloud purge",
+    "restore into fresh third workspace after purge",
+    "random binary asset synchronized and restored byte-for-byte",
+    "container restart preserves restored document and SFTP access"
+  ],
+  "run_id": 35196772155,
+  "patch_commit": "a54ed858544f3d9fd625c62e09db25914f55b837",
+  "validator_commit": "cc31a6f94",
+  "sftp_io_delay_ms": 80
+}
