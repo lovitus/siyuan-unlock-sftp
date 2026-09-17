@@ -23,7 +23,7 @@ if args.kernel and not args.resources:
     p.error("--resources is required with --kernel")
 output = Path(args.output).resolve()
 output.mkdir(parents=True, exist_ok=False)
-sftp = json.loads(Path(args.sftp_config).read_text())
+sftp = json.loads(Path(args.sftp_config).read_text(encoding="utf-8"))
 processes = []
 containers = []
 events = []
@@ -126,13 +126,14 @@ def launch(name):
 def ready(d, proc=None):
     ws, name = d["ws"], d["name"]
     deadline = time.monotonic() + 90
+    last_error = "no boot response"
     while time.monotonic() < deadline:
         if proc is not None and proc.poll() is not None:
             raise RuntimeError(
                 name + " exited; inspect " + str(output / (name + ".log"))
             )
         try:
-            conf = json.loads((ws / "conf/conf.json").read_text())
+            conf = json.loads((ws / "conf/conf.json").read_text(encoding="utf-8"))
             d["token"] = conf["api"]["token"]
             with urllib.request.urlopen(
                 d["url"] + "/api/system/bootProgress", timeout=2
@@ -140,10 +141,10 @@ def ready(d, proc=None):
                 progress = json.load(r)
             if progress.get("data", {}).get("progress", 0) >= 100:
                 return d
-        except (OSError, ValueError, KeyError):
-            pass
+        except (OSError, ValueError, KeyError) as e:
+            last_error = repr(e)
         time.sleep(0.3)
-    raise TimeoutError("kernel boot: " + name)
+    raise TimeoutError("kernel boot: " + name + "; last probe: " + last_error)
 
 
 def waitfor(fn, label):
@@ -198,7 +199,7 @@ try:
     call(b, "/api/sync/performSync")
     docpath = Path("data") / notebook / (doc + ".sy")
     waitfor(lambda: (b["ws"] / docpath).exists(), "A document missing on B")
-    assert "artifact-original-A" in (b["ws"] / docpath).read_text()
+    assert "artifact-original-A" in (b["ws"] / docpath).read_text(encoding="utf-8")
     # Sync writes files before its asynchronous application index is ready.
     waitfor(
         lambda: call(b, "/api/block/getBlockInfo", {"id": doc}, expect=None)
@@ -214,11 +215,11 @@ try:
     call(b, "/api/sync/performSync")
     call(a, "/api/sync/performSync")
     waitfor(
-        lambda: "artifact-update-B" in (a["ws"] / docpath).read_text(),
+        lambda: "artifact-update-B" in (a["ws"] / docpath).read_text(encoding="utf-8"),
         "B edit missing on A",
     )
-    assert json.loads((a["ws"] / docpath).read_text()) == json.loads(
-        (b["ws"] / docpath).read_text()
+    assert json.loads((a["ws"] / docpath).read_text(encoding="utf-8")) == json.loads(
+        (b["ws"] / docpath).read_text(encoding="utf-8")
     )
     if args.asset_mib:
         asset = Path("data/assets/sftp-validation.bin")
@@ -269,7 +270,7 @@ try:
     waitfor(
         lambda: (c["ws"] / docpath).exists(), "empty workspace restore missing document"
     )
-    restored = (c["ws"] / docpath).read_text()
+    restored = (c["ws"] / docpath).read_text(encoding="utf-8")
     assert "artifact-original-A" in restored and "artifact-update-B" in restored
     if args.asset_mib:
         assert (
