@@ -3,7 +3,15 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--directory", required=True)
+parser.add_argument(
+    "--io-delay-ms",
+    type=int,
+    default=0,
+    help="Artificial delay for each SFTP read/write request",
+)
 args = parser.parse_args()
+if args.io_delay_ms < 0:
+    parser.error("--io-delay-ms must be nonnegative")
 base = Path(args.directory)
 base.mkdir(parents=True, exist_ok=False)
 root = base / "remote"
@@ -22,13 +30,23 @@ class Server(asyncssh.SSHServer):
         return username == "tester" and password == "isolated-sftp-validation"
 
 
+class DelayedSFTP(asyncssh.SFTPServer):
+    async def read(self, file_obj, offset, size):
+        await asyncio.sleep(args.io_delay_ms / 1000)
+        return super().read(file_obj, offset, size)
+
+    async def write(self, file_obj, offset, data):
+        await asyncio.sleep(args.io_delay_ms / 1000)
+        return super().write(file_obj, offset, data)
+
+
 async def main():
     server = await asyncssh.create_server(
         Server,
         "127.0.0.1",
         0,
         server_host_keys=[key],
-        sftp_factory=lambda chan: asyncssh.SFTPServer(chan, chroot=str(root)),
+        sftp_factory=lambda chan: DelayedSFTP(chan, chroot=str(root)),
     )
     config = dict(
         host="127.0.0.1",

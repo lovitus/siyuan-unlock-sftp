@@ -15,7 +15,10 @@ mode.add_argument(
 p.add_argument("--resources")
 p.add_argument("--sftp-config", required=True)
 p.add_argument("--output", required=True)
+p.add_argument("--asset-mib", type=int, default=0)
 args = p.parse_args()
+if args.asset_mib < 0 or args.asset_mib > 256:
+    p.error("--asset-mib must be between 0 and 256")
 if args.kernel and not args.resources:
     p.error("--resources is required with --kernel")
 output = Path(args.output).resolve()
@@ -53,10 +56,16 @@ def call(d, endpoint, data=None, expect=0):
             "Authorization": "Token " + d["token"],
         },
     )
-    with urllib.request.urlopen(req, timeout=120) as response:
+    started = time.monotonic()
+    with urllib.request.urlopen(req, timeout=300) as response:
         result = json.load(response)
     events.append(
-        {"device": d["name"], "endpoint": endpoint, "code": result.get("code")}
+        {
+            "device": d["name"],
+            "endpoint": endpoint,
+            "code": result.get("code"),
+            "seconds": round(time.monotonic() - started, 3),
+        }
     )
     print(d["name"], endpoint, result.get("code"), flush=True)
     if expect is not None and result.get("code") != expect:
@@ -208,6 +217,18 @@ try:
     assert json.loads((a["ws"] / docpath).read_text()) == json.loads(
         (b["ws"] / docpath).read_text()
     )
+    if args.asset_mib:
+        asset = Path("data/assets/sftp-validation.bin")
+        payload = os.urandom(args.asset_mib * 1024 * 1024)
+        (a["ws"] / asset).parent.mkdir(parents=True, exist_ok=True)
+        (a["ws"] / asset).write_bytes(payload)
+        call(a, "/api/sync/performSync")
+        call(b, "/api/sync/performSync")
+        assert (b["ws"] / asset).read_bytes() == payload, "binary asset differs on B"
+        report["asset"] = {
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
     call(a, "/api/repo/createSnapshot", {"memo": "artifact SFTP backup"})
     snapshots = call(a, "/api/repo/getRepoSnapshots", {"page": 1})
     snapshot = snapshots["snapshots"][0]["id"]
@@ -247,6 +268,10 @@ try:
     )
     restored = (c["ws"] / docpath).read_text()
     assert "artifact-original-A" in restored and "artifact-update-B" in restored
+    if args.asset_mib:
+        assert (
+            c["ws"] / asset
+        ).read_bytes() == payload, "binary asset differs after fresh restore"
     if args.image:
         before = (c["ws"] / docpath).read_bytes()
         subprocess.run(["docker", "restart", c["container"]], check=True, timeout=60)
@@ -275,6 +300,10 @@ try:
             "restore into fresh third workspace after purge",
         ],
     )
+    if args.asset_mib:
+        report["checks"].append(
+            "random binary asset synchronized and restored byte-for-byte"
+        )
     if args.image:
         report["checks"].append(
             "container restart preserves restored document and SFTP access"

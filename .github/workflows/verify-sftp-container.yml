@@ -12,7 +12,11 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [normal, delayed-io]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,10 +34,15 @@ jobs:
           digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image")
           echo "SFTP_REVIEW_IMAGE=$digest" >> "$GITHUB_ENV"
       - name: Exercise original entrypoint, SFTP sync, backup and restart
+        env:
+          PROFILE: ${{ matrix.profile }}
         run: |
           set -euo pipefail
+          delay_ms=0
+          asset_mib=0
+          if [[ "$PROFILE" = delayed-io ]]; then delay_ms=80; asset_mib=16; fi
           python -m pip install asyncssh
-          python scripts/validation/asyncssh_server.py --directory "$RUNNER_TEMP/sftp-server" > "$RUNNER_TEMP/sftp-server.log" 2>&1 &
+          python scripts/validation/asyncssh_server.py --directory "$RUNNER_TEMP/sftp-server" --io-delay-ms "$delay_ms" > "$RUNNER_TEMP/sftp-server.log" 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           for _ in $(seq 1 60); do
@@ -42,13 +51,13 @@ jobs:
             sleep 1
           done
           python scripts/validation/verify_sftp_artifact.py \
-            --image "$SFTP_REVIEW_IMAGE" \
+            --image "$SFTP_REVIEW_IMAGE" --asset-mib "$asset_mib" \
             --sftp-config "$RUNNER_TEMP/sftp-server/sftp.json" \
             --output "$RUNNER_TEMP/sftp-container-validation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: container-validation
+          name: container-validation-${{ matrix.profile }}
           path: |
             ${{ runner.temp }}/sftp-container-validation/report.json
             ${{ runner.temp }}/sftp-container-validation/*.log
