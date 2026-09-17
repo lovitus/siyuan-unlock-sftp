@@ -34,6 +34,9 @@ report = {
 }
 
 if args.image:
+    if os.environ.get("SFTP_REVIEW_BASE_IMAGE"):
+        report["base_image"] = os.environ["SFTP_REVIEW_BASE_IMAGE"]
+        report["local_derivative_cmd"] = ["serve"]
     report["image"] = json.loads(
         subprocess.check_output(["docker", "image", "inspect", args.image])
     )[0]

@@ -10,6 +10,10 @@ on:
         default: true
   workflow_dispatch:
     inputs:
+      commandFix:
+        description: Test CMD serve in a local derivative of the published image (no publishing)
+        type: boolean
+        default: false
       delayed:
         description: Also exercise delayed I/O with a 16 MiB asset
         type: boolean
@@ -45,6 +49,14 @@ jobs:
           test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$REVISION"
           digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image")
           echo "SFTP_REVIEW_IMAGE=$digest" >> "$GITHUB_ENV"
+      - name: Isolate default command fix without recompiling the kernel
+        if: inputs.commandFix == true
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/empty-context"
+          printf 'FROM %s\nCMD ["serve"]\n' "$SFTP_REVIEW_IMAGE" | docker build -t sftp-command-fix-validation -f - "$RUNNER_TEMP/empty-context"
+          echo "SFTP_REVIEW_BASE_IMAGE=$SFTP_REVIEW_IMAGE" >> "$GITHUB_ENV"
+          echo "SFTP_REVIEW_IMAGE=sftp-command-fix-validation" >> "$GITHUB_ENV"
       - name: Verify default image command and workspace ownership
         if: matrix.profile == 'normal'
         run: python scripts/validation/verify_container_default.py --image "$SFTP_REVIEW_IMAGE" --report "$RUNNER_TEMP/sftp-container-default.json"

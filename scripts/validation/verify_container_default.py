@@ -18,6 +18,9 @@ report_path = Path(args.report)
 report_path.parent.mkdir(parents=True, exist_ok=True)
 name = "sftp-default-" + secrets.token_hex(4)
 report = {"image": args.image, "command_override": False, "status": "failed"}
+if os.environ.get("SFTP_REVIEW_BASE_IMAGE"):
+    report["base_image"] = os.environ["SFTP_REVIEW_BASE_IMAGE"]
+    report["local_derivative_cmd"] = ["serve"]
 with tempfile.TemporaryDirectory(prefix="sftp-default-") as directory:
     try:
         subprocess.run(
