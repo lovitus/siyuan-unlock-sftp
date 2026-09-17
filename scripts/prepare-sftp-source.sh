@@ -18,5 +18,12 @@ if [[ "$version" != v3.8.3 && "${3:-desktop}" != docker ]]; then
  git apply "$patch_root/patches/siyuan/first-launch-notice.patch"
 fi
 git apply "$patch_root/patches/sftp/provider.patch"
+if [[ "${3:-desktop}" == docker ]]; then
+ # The entrypoint already invokes /opt/siyuan/kernel; CMD contains only its args.
+ # Accept upstream incorporating this exact fix in a later stable tag.
+ if ! git apply --reverse --check "$patch_root/patches/sftp/docker-command.patch" 2>/dev/null; then
+  git apply "$patch_root/patches/sftp/docker-command.patch"
+ fi
+fi
 cp -R "$patch_root/overlays/kernel/sftpcloud" kernel/
 git diff --check

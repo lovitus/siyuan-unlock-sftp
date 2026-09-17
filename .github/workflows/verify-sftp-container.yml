@@ -1,5 +1,13 @@
 name: Verify published SFTP container
 on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      delayed:
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       delayed:

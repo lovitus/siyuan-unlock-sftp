@@ -1,0 +1,25 @@
+name: Build and verify container review
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Official SiYuan version
+        required: true
+        default: v3.8.3
+        type: string
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    uses: ./.github/workflows/release-docker.yml
+    with:
+      version: ${{ inputs.version }}
+      imageTag: review-${{ github.sha }}
+    secrets: inherit
+  verify:
+    needs: build
+    uses: ./.github/workflows/verify-sftp-container.yml
+    with:
+      revision: ${{ github.sha }}
+      delayed: true
