@@ -6,22 +6,42 @@ from pathlib import Path
 # The normal UI initializes the local unlock account with getCloudUser.
 # Reproduce that setup before testing API-driven synchronization.
 p = argparse.ArgumentParser()
-p.add_argument("--kernel", required=True)
-p.add_argument("--resources", required=True)
+mode = p.add_mutually_exclusive_group(required=True)
+mode.add_argument("--kernel")
+mode.add_argument(
+    "--image",
+    help="Run the published image through its original entrypoint (Linux Docker host)",
+)
+p.add_argument("--resources")
 p.add_argument("--sftp-config", required=True)
 p.add_argument("--output", required=True)
 args = p.parse_args()
-output = Path(args.output)
+if args.kernel and not args.resources:
+    p.error("--resources is required with --kernel")
+output = Path(args.output).resolve()
 output.mkdir(parents=True, exist_ok=False)
 sftp = json.loads(Path(args.sftp_config).read_text())
 processes = []
+containers = []
 events = []
 report = {
-    "kernel": str(Path(args.kernel).resolve()),
-    "kernel_sha256": hashlib.sha256(Path(args.kernel).read_bytes()).hexdigest(),
+    "runtime": "docker" if args.image else "native",
     "sftp_server": "AsyncSSH standalone, localhost, password authentication",
     "events": events,
 }
+
+if args.image:
+    report["image"] = json.loads(
+        subprocess.check_output(["docker", "image", "inspect", args.image])
+    )[0]
+    report["image"] = {
+        k: report["image"][k] for k in ("Id", "RepoDigests", "Architecture", "Os")
+    }
+else:
+    report.update(
+        kernel=str(Path(args.kernel).resolve()),
+        kernel_sha256=hashlib.sha256(Path(args.kernel).read_bytes()).hexdigest(),
+    )
 
 
 def call(d, endpoint, data=None, expect=0):
@@ -51,29 +71,51 @@ def launch(name):
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     log = (output / (name + ".log")).open("wb")
-    proc = subprocess.Popen(
-        [
-            args.kernel,
-            "serve",
-            "--workspace",
-            str(ws),
-            "--wd",
-            args.resources,
-            "--port",
-            str(port),
-            "--accessAuthCode",
-            secrets.token_hex(16),
-            "--lang",
-            "en_US",
-        ],
-        stdout=log,
-        stderr=subprocess.STDOUT,
-    )
+    kernel_args = [
+        "serve",
+        "--wd",
+        "/opt/siyuan" if args.image else args.resources,
+        "--port",
+        str(port),
+        "--accessAuthCode",
+        secrets.token_hex(16),
+        "--lang",
+        "en_US",
+    ]
+    container = None
+    if args.image:
+        container = "sftp-review-" + name + "-" + secrets.token_hex(4)
+        containers.append(container)
+        command = [
+            "docker",
+            "run",
+            "--name",
+            container,
+            "--network",
+            "host",
+            "-e",
+            f"PUID={os.getuid()}",
+            "-e",
+            f"PGID={os.getgid()}",
+            "-v",
+            f"{ws}:/siyuan/workspace",
+            args.image,
+        ] + kernel_args
+    else:
+        command = [args.kernel] + kernel_args + ["--workspace", str(ws)]
+    proc = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
     processes.append((proc, log))
     d = {"name": name, "ws": ws, "url": f"http://127.0.0.1:{port}", "token": ""}
+    d["container"] = container
+    ready(d, proc)
+    return d
+
+
+def ready(d, proc=None):
+    ws, name = d["ws"], d["name"]
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
-        if proc.poll() is not None:
+        if proc is not None and proc.poll() is not None:
             raise RuntimeError(
                 name + " exited; inspect " + str(output / (name + ".log"))
             )
@@ -199,6 +241,18 @@ try:
     )
     restored = (c["ws"] / docpath).read_text()
     assert "artifact-original-A" in restored and "artifact-update-B" in restored
+    if args.image:
+        before = (c["ws"] / docpath).read_bytes()
+        subprocess.run(["docker", "restart", c["container"]], check=True, timeout=60)
+        ready(c)
+        assert (
+            c["ws"] / docpath
+        ).read_bytes() == before, "workspace changed after container restart"
+        call(
+            c,
+            "/api/repo/downloadCloudSnapshot",
+            {"id": snapshot, "tag": "artifact-check"},
+        )
     report.update(
         status="passed",
         cloud=cloud,
@@ -215,10 +269,18 @@ try:
             "restore into fresh third workspace after purge",
         ],
     )
+    if args.image:
+        report["checks"].append(
+            "container restart preserves restored document and SFTP access"
+        )
 except BaseException as e:
     report.update(status="failed", error=str(e))
     raise
 finally:
+    for container in containers:
+        subprocess.run(
+            ["docker", "rm", "-f", container], check=False, stdout=subprocess.DEVNULL
+        )
     for proc, log in processes:
         proc.terminate()
     for proc, log in processes:

@@ -1,0 +1,55 @@
+name: Verify published SFTP container
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Full patch commit of the published review image
+        required: true
+        default: a54ed858544f3d9fd625c62e09db25914f55b837
+        type: string
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pull and verify published image
+        env:
+          REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          [[ "$REVISION" =~ ^[a-f0-9]{40}$ ]]
+          image="ghcr.io/lovitus/siyuan-unlock-sftp:review-$REVISION"
+          docker pull "$image"
+          test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$REVISION"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image")
+          echo "SFTP_REVIEW_IMAGE=$digest" >> "$GITHUB_ENV"
+      - name: Exercise original entrypoint, SFTP sync, backup and restart
+        run: |
+          set -euo pipefail
+          python -m pip install asyncssh
+          python scripts/validation/asyncssh_server.py --directory "$RUNNER_TEMP/sftp-server" > "$RUNNER_TEMP/sftp-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            test ! -f "$RUNNER_TEMP/sftp-server/sftp.json" || break
+            kill -0 "$server_pid"
+            sleep 1
+          done
+          python scripts/validation/verify_sftp_artifact.py \
+            --image "$SFTP_REVIEW_IMAGE" \
+            --sftp-config "$RUNNER_TEMP/sftp-server/sftp.json" \
+            --output "$RUNNER_TEMP/sftp-container-validation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: container-validation
+          path: |
+            ${{ runner.temp }}/sftp-container-validation/report.json
+            ${{ runner.temp }}/sftp-container-validation/*.log
+            ${{ runner.temp }}/sftp-server.log
