@@ -36,6 +36,8 @@ with tempfile.TemporaryDirectory(prefix="sftp-default-") as directory:
                 f"PUID={os.getuid()}",
                 "-e",
                 f"PGID={os.getgid()}",
+                "-e",
+                "SIYUAN_ACCESS_AUTH_CODE=" + secrets.token_hex(16),
                 "-v",
                 f"{directory}:/siyuan/workspace",
                 args.image,
