@@ -1,7 +1,7 @@
 # SFTP cloud storage and release CI
 
 This fork adds SFTP as provider `5`, on top of the unlock patches from
-`appdev/siyuan-unlock`. The patch is currently validated against SiYuan `v3.8.3`.
+`appdev/siyuan-unlock`. The patch is validated against SiYuan `v3.8.3` and `v3.8.4`.
 This repository stores only patches, provider overlays, build/validation scripts,
 workflows and documentation. Release builds fetch the official version tag and
 apply `patches/` and `overlays/`; upstream source and dependencies are not vendored.
