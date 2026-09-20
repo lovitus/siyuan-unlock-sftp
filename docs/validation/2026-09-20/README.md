@@ -162,3 +162,16 @@ coverage is Linux AMD64; the other three container targets are build coverage.
 All required review gates passed, so v3.8.4 is added to the supported-release
 list. The existing complete platform release workflow remains responsible for
 publishing assets and promoting the GHCR latest tag after its builds succeed.
+
+## Draft lookup correction during formal release
+
+Formal release run [35505858044](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35505858044)
+passed source preflight and started every platform build from `932f214f9`.
+Inspection found that the tag endpoint returned HTTP 404 for unpublished drafts,
+while the authenticated release listing contained seven empty v3.8.4 drafts from
+previous failed scheduled runs and the current build's draft. The tracking code
+now searches all pages of the authenticated listing after a tag-endpoint 404,
+reuses a unique matching draft, and rejects ambiguous duplicates before mutation.
+Regression tests cover hidden drafts and duplicate detection (10 tests passed).
+The seven obsolete drafts were empty and targeted `47c27fa2b`; the current draft
+ID `392398473` targets the actual formal-build commit `932f214f9`.

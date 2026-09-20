@@ -32,7 +32,19 @@ def main():
     except HTTPError as error:
         if error.code != 404:
             raise
-        release = None
+        # The tag endpoint can return 404 for an unpublished draft. Search the
+        # authenticated release listing before deciding to create a new one.
+        matches = []
+        page = 1
+        while True:
+            releases = api(f'repos/{repo}/releases?per_page=100&page={page}')
+            matches.extend(item for item in releases if item['tag_name'] == tag)
+            if len(releases) < 100:
+                break
+            page += 1
+        if len(matches) > 1:
+            raise ValueError(f'Multiple releases exist for {tag}; reconcile duplicate drafts before building')
+        release = matches[0] if matches else None
     pending = release is None or release['draft']
     supported = json.loads((Path(__file__).resolve().parent.parent /
                             'patches/sftp/supported-releases.json').read_text())['versions']

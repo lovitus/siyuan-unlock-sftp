@@ -14,7 +14,7 @@ spec.loader.exec_module(tracking)
 
 
 class ReleaseTrackingTest(unittest.TestCase):
-    def run_check(self, release=None, error=None, tag='v3.8.3', manager='pnpm@11.25.0'):
+    def run_check(self, release=None, error=None, tag='v3.8.3', manager='pnpm@11.25.0', listed=None):
         calls = []
         def api(path):
             calls.append(path)
@@ -22,6 +22,8 @@ class ReleaseTrackingTest(unittest.TestCase):
                 return dict(tag_name=tag, draft=False, prerelease=False, html_url='https://github.com/appdev/siyuan-unlock/releases/tag/' + tag)
             if '/contents/' in path:
                 return {'content': base64.b64encode(json.dumps({'packageManager': manager}).encode()).decode()}
+            if '/releases?per_page=' in path:
+                return listed or []
             if error:
                 raise HTTPError(path, error, 'test error', {}, None)
             return release
@@ -74,6 +76,22 @@ class ReleaseTrackingTest(unittest.TestCase):
     def test_api_failure_never_creates_release(self):
         with self.assertRaises(HTTPError):
             self.run_check(error=403)
+
+    def test_draft_missing_from_tag_endpoint_is_reused(self):
+        output, mutations, calls = self.run_check(error=404, listed=[
+            {'tag_name': 'v3.8.3', 'draft': True},
+        ])
+        self.assertIn('pending=true', output)
+        self.assertEqual(len(mutations), 1)
+        self.assertEqual(mutations[0].args[0][2], 'edit')
+        self.assertIn('repos/example/siyuan/releases?per_page=100&page=1', calls)
+
+    def test_duplicate_drafts_are_not_silently_selected(self):
+        with self.assertRaises(ValueError):
+            self.run_check(error=404, listed=[
+                {'tag_name': 'v3.8.3', 'draft': True},
+                {'tag_name': 'v3.8.3', 'draft': True},
+            ])
 
     def test_untrusted_tag_and_package_manager_rejected(self):
         with self.assertRaises(ValueError):
