@@ -36,6 +36,15 @@ final platform build results and downloaded artifact runtime validation remain
 pending. [Provider CI](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35500051667)
 now tests both v3.8.3 and v3.8.4.
 
+Both provider CI matrix entries have since completed successfully. Commit
+`fd5a60a3f` adds post-build runtime verification for exact review artifacts:
+macOS downloads and mounts the ARM64 DMG read-only, Windows extracts the native
+kernel from the installer, and Linux pulls the review image by revision then
+pins its digest. The successful full review run triggers these checks; container
+verification also checks its specific build job. Reports include hashes and
+source provenance. These checks have been configured but have not yet run for
+the in-progress v3.8.4 build, so no artifact runtime pass is claimed here.
+
 The automatic-release supported-version list still contains only v3.8.3.
 Do not add v3.8.4 until review builds and artifact verification pass. This keeps
 the fixed scheduled check from restarting an unvalidated release matrix.
