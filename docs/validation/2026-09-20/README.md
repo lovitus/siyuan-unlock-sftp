@@ -175,3 +175,18 @@ reuses a unique matching draft, and rejects ambiguous duplicates before mutation
 Regression tests cover hidden drafts and duplicate detection (10 tests passed).
 The seven obsolete drafts were empty and targeted `47c27fa2b`; the current draft
 ID `392398473` targets the actual formal-build commit `932f214f9`.
+
+## Formal release macOS ARM64 package: runtime passed
+
+The DMG downloaded from the unique v3.8.4 release draft (`392398473`) produced
+by formal run `35505858044` passed image checksum verification and all nine SFTP
+lifecycle/configuration assertions against a new isolated server. Its packaged
+kernel SHA-256 exactly matches the previously validated review kernel. The
+report records the formal commit, release ID, package hash and size:
+[formal macOS runtime report](v3.8.4-formal-macos.json).
+The server/processes were stopped and the DMG detached after testing.
+
+The corrected release lookup was additionally checked against live GitHub API
+data with mutation mocked: it selected an edit of the existing v3.8.4 draft,
+not creation of another draft. The subsequent tracking run waits behind the
+current formal build under the existing workflow concurrency group.
