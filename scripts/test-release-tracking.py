@@ -53,16 +53,23 @@ class ReleaseTrackingTest(unittest.TestCase):
         self.assertIn('example/siyuan', args)
 
     def test_unsupported_new_version_waits_without_creating_release(self):
-        output, mutations, calls = self.run_check(error=404, tag='v3.8.4')
+        output, mutations, calls = self.run_check(error=404, tag='v9.9.9')
         self.assertIn('pending=false', output)
         self.assertIn('compatibility_pending=true', output)
         self.assertFalse(mutations)
         self.assertFalse(any('/contents/' in path for path in calls))
 
     def test_unsupported_draft_does_not_repeat_failed_build(self):
-        output, mutations, _ = self.run_check({'draft': True}, tag='v3.8.4')
+        output, mutations, _ = self.run_check({'draft': True}, tag='v9.9.9')
         self.assertIn('compatibility_pending=true', output)
         self.assertFalse(mutations)
+
+    def test_validated_v384_starts_build(self):
+        output, mutations, calls = self.run_check(error=404, tag='v3.8.4')
+        self.assertIn('pending=true', output)
+        self.assertNotIn('compatibility_pending=true', output)
+        self.assertIn('v3.8.4', mutations[0].args[0])
+        self.assertIn('repos/siyuan-note/siyuan/contents/app/package.json?ref=v3.8.4', calls)
 
     def test_api_failure_never_creates_release(self):
         with self.assertRaises(HTTPError):

@@ -3,9 +3,10 @@
 ## Current validation status
 
 Patch adaptation is complete at `08f08b65565b1d7970f82e4b2965a5411ecc4865`.
-The six desktop jobs, Android, and iOS in review run `35500058703` have succeeded.
-Only the four-platform Docker build remains running; container runtime checks
-and release eligibility are pending. v3.8.4 is still a draft, not a published release.
+All platform jobs in review run `35500058703` have succeeded, including the
+four-platform Docker build. Container verification run `35505661637` passed both
+normal and delayed-I/O profiles. v3.8.4 is now eligible for automatic release
+builds; publication must still wait for the formal release workflow to succeed.
 
 Downloaded macOS ARM64, Windows and Linux AMD64 packaged kernels passed the
 nine lifecycle/configuration assertions. A live sequential macOS → Windows →
@@ -144,3 +145,20 @@ and a fresh isolated SFTP server with a random password. All nine original
 assertions passed, including backup restore into a third workspace after purge.
 [Report](v3.8.4-harness-regression.json). The temporary server and processes were
 stopped and the read-only DMG was detached after completion.
+
+## Container verification complete; release eligibility enabled
+
+[Container verification run 35505661637](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35505661637)
+passed both profiles using review source `08f08b655` and the same immutable image
+digest `sha256:15886ab603218ae85c4e4474bc8509dba5f17fe79727bd8a21ec05505980a87a`.
+
+- [Default entrypoint, command, mounted workspace and ownership](v3.8.4-container-default.json).
+- [Normal SFTP lifecycle and container restart](v3.8.4-container-normal.json).
+- [80 ms per-request I/O delay and 16 MiB random asset](v3.8.4-container-delayed-io.json).
+
+The delayed profile proved byte-for-byte asset sync and fresh-workspace restore,
+plus document persistence and SFTP access after container restart. Runtime
+coverage is Linux AMD64; the other three container targets are build coverage.
+All required review gates passed, so v3.8.4 is added to the supported-release
+list. The existing complete platform release workflow remains responsible for
+publishing assets and promoting the GHCR latest tag after its builds succeed.

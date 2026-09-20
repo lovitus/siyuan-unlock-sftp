@@ -1,0 +1,12 @@
+{
+  "image": "ghcr.io/lovitus/siyuan-unlock-sftp@sha256:15886ab603218ae85c4e4474bc8509dba5f17fe79727bd8a21ec05505980a87a",
+  "command_override": false,
+  "status": "passed",
+  "checks": [
+    "original ENTRYPOINT and CMD boot",
+    "mounted workspace used",
+    "PUID ownership respected"
+  ],
+  "validation_run": 35505661637,
+  "source_revision": "08f08b65565b1d7970f82e4b2965a5411ecc4865"
+}
