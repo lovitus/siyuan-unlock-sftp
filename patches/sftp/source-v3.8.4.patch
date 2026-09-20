@@ -1,0 +1,853 @@
+diff --git a/app/src/config/tabs/syncTab.ts b/app/src/config/tabs/syncTab.ts
+index 9bef15f..842182e 100644
+--- a/app/src/config/tabs/syncTab.ts
++++ b/app/src/config/tabs/syncTab.ts
+@@ -1,6 +1,5 @@
+ import {openInputDialog} from "../../dialog/inputDialog";
+ import type {SettingTabBuilder} from "../setting/builder";
+-import {registerAccountGroup} from "./accountUi";
+ import {Constants} from "../../constants";
+ import {fetchPost} from "../../util/fetch";
+ import {confirmDialog} from "../../dialog/confirmDialog";
+@@ -23,6 +22,7 @@ const registerSyncGroup = (tab: SettingTabBuilder) => {
+             {value: 0, label: "SiYuan"},
+             {value: 2, label: "S3"},
+             {value: 3, label: "WebDAV"},
++            {value: 5, label: "SFTP"},
+             ...(["std", "docker"].includes(window.siyuan.config.system.container) ? [{value: 4, label: window.siyuan.languages.localFileSystem}] : []),
+         ],
+     });
+@@ -261,7 +261,6 @@ const mountRepoKey = (root: HTMLElement) => {
+ };
+ 
+ export const registerSyncTab = (tab: SettingTabBuilder) => {
+-    registerAccountGroup(tab);
+     registerSyncGroup(tab);
+     registerRepoGroup(tab);
+ };
+diff --git a/app/src/config/tabs/syncUi.ts b/app/src/config/tabs/syncUi.ts
+index 63f2a1a..b0a814f 100644
+--- a/app/src/config/tabs/syncUi.ts
++++ b/app/src/config/tabs/syncUi.ts
+@@ -74,7 +74,7 @@ const setSyncModeRelatedConfigItemVisible = (root: Element) => {
+ /** 同步提供商配置区检索关键词（供 syncTab 注册 slot） */
+ export const getSyncProviderConfigKeywords = (): string[] => buildProviderConfigKeywords();
+ 
+-type SyncProviderConfigKey = Extract<keyof Config.ISync, "s3" | "webdav" | "local">;
++type SyncProviderConfigKey = Extract<keyof Config.ISync, "s3" | "webdav" | "local" | "sftp">;
+ 
+ type SyncProviderFieldDef =
+     | {type: "input"; label: string; id: string; attrs?: string}
+@@ -197,6 +197,24 @@ const SYNC_PROVIDER_DEFS: Record<Config.ISync["provider"], SyncProviderDef> = {
+             {type: "input", label: "Concurrent Reqs", id: "concurrentReqs", attrs: 'type="number" min="1" max="16"'},
+         ],
+     },
++    5: {
++        isProviderConfigAllowed: isPaidUser,
++        configKey: "sftp",
++        api: "/api/sync/setSyncProviderSFTP",
++        getConfig: () => window.siyuan.config.sync.sftp,
++        genIntro: () => `<div class="b3-label b3-label--inner">SFTP — specify an existing absolute remote path and the server's SHA256 host key fingerprint.</div>`,
++        genUnpaidIntro: genThirdPartyUnpaidIntro,
++        fields: [
++            {type: "input", label: "Host", id: "host", attrs: 'required'},
++            {type: "input", label: "Port", id: "port", attrs: 'type="number" min="1" max="65535" required'},
++            {type: "input", label: "Username", id: "username", attrs: 'required'},
++            {type: "password", label: "Password", id: "password"},
++            {type: "input", label: "Path (required)", id: "path", attrs: 'required placeholder="/srv/siyuan"'},
++            {type: "input", label: "Host key (SHA256)", id: "hostKey", attrs: 'required placeholder="SHA256:..."'},
++            {type: "input", label: "Timeout (s)", id: "timeout", attrs: 'type="number" min="7" max="300"'},
++            {type: "input", label: "Concurrent Reqs", id: "concurrentReqs", attrs: 'type="number" min="1" max="16"'},
++        ],
++    },
+     4: {
+         isProviderConfigAllowed: isPaidUser,
+         configKey: "local",
+@@ -331,6 +349,7 @@ const genProviderFlexSelect = (label: string, id: string, optionsHtml: string) =
+ </div>`;
+ 
+ const genProviderActionButtons = (dataType: SyncProviderConfigKey) => {
++    const saveHtml = dataType === "sftp" ? `<button class="b3-button" id="saveSFTPConfig">${window.siyuan.languages.save}</button><div class="fn__space"></div>` : "";
+     const importExportHtml = getHostCapabilities().importExport && (dataType === "s3" || dataType === "webdav") ? `<div class="fn__space"></div>
+     <button class="b3-button b3-button--outline fn__size200" style="position: relative">
+         <input id="importSyncConfig" class="b3-form__upload" type="file" data-type="${dataType}">
+@@ -342,7 +361,7 @@ const genProviderActionButtons = (dataType: SyncProviderConfigKey) => {
+     </button>` : "";
+     return `<div class="b3-label b3-label--inner fn__flex fn__flex-wrap">
+     <div class="fn__flex-1"></div>
+-    <button class="b3-button b3-button--outline fn__size200" id="purgeCloudData">
++    ${saveHtml}<button class="b3-button b3-button--outline fn__size200" id="purgeCloudData">
+         <svg><use xlink:href="#iconTrashcan"></use></svg>${window.siyuan.languages.cloudStoragePurge}
+     </button>${importExportHtml}
+ </div>`;
+@@ -399,6 +418,13 @@ const bindProviderConfigEvent = (configElement: Element, root: Element) => {
+         return;
+     }
+     fillSyncProviderConfigValues(configElement);
++    configElement.querySelector("#saveSFTPConfig")?.addEventListener("click", () => {
++        const inputs = Array.from(configElement.querySelectorAll<HTMLInputElement>("input"));
++        if (inputs.some(input => !input.reportValidity())) { return; }
++        const pathInput = configElement.querySelector<HTMLInputElement>("#path");
++        if (!pathInput.value.trim().startsWith("/")) { showMessage("SFTP path must be an absolute remote directory"); return; }
++        saveSyncProviderConfigValues(configElement);
++    });
+     if (syncProviderConfigBoundElements.has(configElement)) {
+         return;
+     }
+@@ -408,7 +434,7 @@ const bindProviderConfigEvent = (configElement: Element, root: Element) => {
+         if (!target.matches(".b3-text-field, .b3-select")) {
+             return;
+         }
+-        saveSyncProviderConfigValues(configElement);
++        if (window.siyuan.config.sync.provider !== 5) { saveSyncProviderConfigValues(configElement); }
+     });
+ };
+ 
+diff --git a/app/src/layout/topBar.ts b/app/src/layout/topBar.ts
+index 5cfe820..e41846b 100644
+--- a/app/src/layout/topBar.ts
++++ b/app/src/layout/topBar.ts
+@@ -11,7 +11,6 @@ import {initTopBarMenu} from "../menus/topBar";
+ import {MenuItem} from "../menus/Menu";
+ import {hideTooltip} from "../dialog/tooltip";
+ import {setMode} from "../util/assets";
+-import {openSetting} from "../config";
+ import {openSearch} from "../search/spread";
+ import type {App} from "../index";
+ /// #if !BROWSER
+@@ -257,9 +256,6 @@ ${isInMobileApp() ? `<div id="barExit" data-topbar-entry="barExit" class="ft__er
+                 event.stopPropagation();
+                 break;
+             } else if (targetId === "toolbarVIP" || targetId === "toolbarTitle") {
+-                if (!window.siyuan.config.readonly) {
+-                    openSetting(app, "sync");
+-                }
+                 event.stopPropagation();
+                 break;
+             } else if (targetId === "barSearch") {
+diff --git a/app/src/types/config.d.ts b/app/src/types/config.d.ts
+index a174b21..e6f5638 100644
+--- a/app/src/types/config.d.ts
++++ b/app/src/types/config.d.ts
+@@ -1848,6 +1848,7 @@ declare namespace Config {
+          */
+         synced: number;
+         webdav: ISyncWebDAV;
++ sftp: {host: string; port: number; username: string; password: string; path: string; hostKey: string; timeout: number; concurrentReqs: number};
+         local: ISyncLocal;
+         lan: ISyncLAN;
+     }
+diff --git a/kernel/api/router.go b/kernel/api/router.go
+index 32cece9..326683c 100644
+--- a/kernel/api/router.go
++++ b/kernel/api/router.go
+@@ -353,6 +353,7 @@ func ServeAPI(ginServer *gin.Engine) {
+ 	ginServer.Handle("POST", "/api/sync/setSyncProvider", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, setSyncProvider)
+ 	ginServer.Handle("POST", "/api/sync/setSyncProviderS3", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, setSyncProviderS3)
+ 	ginServer.Handle("POST", "/api/sync/setSyncProviderWebDAV", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, setSyncProviderWebDAV)
++	ginServer.Handle("POST", "/api/sync/setSyncProviderSFTP", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, setSyncProviderSFTP)
+ 	ginServer.Handle("POST", "/api/sync/setSyncProviderLocal", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, setSyncProviderLocal)
+ 	ginServer.Handle("POST", "/api/sync/setCloudSyncDir", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, setCloudSyncDir)
+ 	ginServer.Handle("POST", "/api/sync/setSyncAssetDownloadMode", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, setSyncAssetDownloadMode)
+diff --git a/kernel/api/setting.go b/kernel/api/setting.go
+index c6fe820..4cac441 100644
+--- a/kernel/api/setting.go
++++ b/kernel/api/setting.go
+@@ -822,18 +822,38 @@ var getPublish = contractHandler(apicontract.GetPublish, func(c *gin.Context, re
+ })
+ 
+ var getCloudUser = contractHandler(apicontract.GetCloudUser, func(c *gin.Context, request apicontract.SettingCloudUserRequest) apicontract.Response[*apicontract.SettingUser] {
+-	user, err := model.RefreshUser(request.Token)
+-	data := settingUserPayload(user)
+-	if err == nil {
+-		return apicontract.Success(data)
+-	}
+-	if model.IsInvalidUserRefresh(err) {
+-		return apicontract.GetCloudUser.FailureWithData(255, model.Conf.Language(19), nil)
+-	}
+-	if model.IsCloudAssetSourceChange(err) {
+-		return apicontract.GetCloudUser.FailureWithData(1, err.Error(), data)
+-	}
+-	return apicontract.GetCloudUser.FailureWithData(1, model.Conf.Language(18), data)
++	user := &conf.User{
++		UserId:                          "0",
++		UserName:                        "_",
++		UserAvatarURL:                   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
++		UserHomeBImgURL:                 "",
++		UserTitles:                      []*conf.UserTitle{},
++		UserIntro:                       "",
++		UserNickname:                    "",
++		UserCreateTime:                  "29991231 00:00:00",
++		UserSiYuanProExpireTime:         -1,
++		UserToken:                       "token",
++		UserTokenExpireTime:             "32503593600",
++		UserSiYuanRepoSize:              0,
++		UserSiYuanPointExchangeRepoSize: 0,
++		UserSiYuanAssetSize:             0,
++		UserTrafficUpload:               0,
++		UserTrafficDownload:             0,
++		UserTrafficAPIGet:               0,
++		UserTrafficAPIPut:               0,
++		UserTrafficTime:                 0,
++		UserSiYuanSubscriptionPlan:      0,
++		UserSiYuanSubscriptionStatus:    0,
++		UserSiYuanSubscriptionType:      1,
++		UserSiYuanOneTimePayStatus:      1,
++	}
++
++	model.Conf.SetUser(user)
++	data, _ := gulu.JSON.MarshalJSON(user)
++	model.Conf.UserData = util.AESEncrypt(string(data))
++	model.Conf.Save()
++
++	return apicontract.Success(settingUserPayload(user))
+ }, func(c *gin.Context) *apicontract.Response[*apicontract.SettingUser] {
+ 	if model.IsAdminRoleContext(c) {
+ 		return nil
+diff --git a/kernel/api/sync.go b/kernel/api/sync.go
+index 544f17b..202d352 100644
+--- a/kernel/api/sync.go
++++ b/kernel/api/sync.go
+@@ -19,6 +19,7 @@ package api
+ import (
+ 	"encoding/hex"
+ 	"io"
++	"net/http"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+@@ -675,3 +676,45 @@ func setCloudSyncDirContract(c *gin.Context, request apicontract.SyncNameRequest
+ 	}
+ 	return
+ }
++
++func setSyncProviderSFTP(c *gin.Context) {
++	ret := gulu.Ret.NewResult()
++	defer c.JSON(http.StatusOK, ret)
++
++	arg, ok := util.JsonArg(c, ret)
++	if !ok {
++		return
++	}
++
++	var sftpArg map[string]any
++	if !util.ParseJsonArgs(arg, ret, util.BindJsonArg("sftp", &sftpArg, true, false)) {
++		return
++	}
++	data, err := gulu.JSON.MarshalJSON(sftpArg)
++	if err != nil {
++		ret.Code = -1
++		ret.Msg = err.Error()
++		ret.Data = map[string]any{"closeTimeout": 5000}
++		return
++	}
++
++	sftp := &conf.SFTP{}
++	if err = gulu.JSON.UnmarshalJSON(data, sftp); err != nil {
++		ret.Code = -1
++		ret.Msg = err.Error()
++		ret.Data = map[string]any{"closeTimeout": 5000}
++		return
++	}
++
++	err = model.SetSyncProviderSFTP(sftp)
++	if err != nil {
++		ret.Code = -1
++		ret.Msg = err.Error()
++		ret.Data = map[string]any{"closeTimeout": 5000}
++		return
++	}
++
++	ret.Data = map[string]any{
++		"sftp": model.Conf.Sync.SFTP,
++	}
++}
+diff --git a/kernel/apicontract/system_conf.go b/kernel/apicontract/system_conf.go
+index 6f438a7..b86c3f0 100644
+--- a/kernel/apicontract/system_conf.go
++++ b/kernel/apicontract/system_conf.go
+@@ -142,7 +142,19 @@ type SystemNetworkProxy struct {
+ 	Port   string `json:"port" api:"optional,nullable"`
+ }
+ 
++type SystemSFTP struct {
++	Host           string `json:"host"`
++	Port           int    `json:"port"`
++	Username       string `json:"username"`
++	Password       string `json:"password"`
++	Path           string `json:"path"`
++	HostKey        string `json:"hostKey"`
++	Timeout        int    `json:"timeout"`
++	ConcurrentReqs int    `json:"concurrentReqs"`
++}
++
+ type SystemSync struct {
++	SFTP                *SystemSFTP    `json:"sftp" api:"optional,nullable"`
+ 	CloudName           string         `json:"cloudName" api:"optional,nullable"`
+ 	Enabled             bool           `json:"enabled" api:"optional,nullable"`
+ 	Perception          bool           `json:"perception" api:"optional,nullable"`
+diff --git a/kernel/conf/appearance.go b/kernel/conf/appearance.go
+index 6c79d4d..0ff0a64 100644
+--- a/kernel/conf/appearance.go
++++ b/kernel/conf/appearance.go
+@@ -64,8 +64,8 @@ func NewAppearance() *Appearance {
+ 		Icon:                "litheness",
+ 		CodeBlockThemeLight: "github",
+ 		CodeBlockThemeDark:  "base16/dracula",
+-		Lang:                "en",
+-		CloseButtonBehavior: 0,
++		Lang:                "zh_CN",
++		CloseButtonBehavior: 1,
+ 		HideToolbar:         true,
+ 		HideStatusBar:       false,
+ 		StatusBar:           util.NewStatusBar(util.IsMobileContainer()),
+diff --git a/kernel/conf/sync.go b/kernel/conf/sync.go
+index 2fdeb79..9e1c098 100644
+--- a/kernel/conf/sync.go
++++ b/kernel/conf/sync.go
+@@ -16,7 +16,12 @@
+ 
+ package conf
+ 
++import "github.com/siyuan-note/siyuan/kernel/sftpcloud"
++
++type SFTP = sftpcloud.Config
++
+ type Sync struct {
++	SFTP                *SFTP    `json:"sftp"`
+ 	CloudName           string   `json:"cloudName"`           // 云端同步目录名称
+ 	Enabled             bool     `json:"enabled"`             // 是否开启同步
+ 	Perception          bool     `json:"perception"`          // 是否开启感知
+@@ -39,8 +44,8 @@ func NewSync() *Sync {
+ 		Enabled:             false,
+ 		Perception:          false,
+ 		Mode:                1,
+-		GenerateConflictDoc: false,
+-		Provider:            ProviderSiYuan,
++		GenerateConflictDoc: true,
++		Provider:            ProviderS3,
+ 		Interval:            30,
+ 		LAN:                 &LANSync{MaxConcurrentReqs: 16},
+ 	}
+@@ -79,6 +84,7 @@ type Local struct {
+ }
+ 
+ const (
++	ProviderSFTP   = 5
+ 	ProviderSiYuan = 0 // ProviderSiYuan 为思源官方提供的云端存储服务
+ 	ProviderS3     = 2 // ProviderS3 为 S3 协议对象存储提供的云端存储服务
+ 	ProviderWebDAV = 3 // ProviderWebDAV 为 WebDAV 协议提供的云端存储服务
+@@ -87,6 +93,8 @@ const (
+ 
+ func ProviderToStr(provider int) string {
+ 	switch provider {
++	case ProviderSFTP:
++		return "SFTP"
+ 	case ProviderSiYuan:
+ 		return "SiYuan"
+ 	case ProviderS3:
+diff --git a/kernel/conf/system.go b/kernel/conf/system.go
+index 51ae380..429eeba 100644
+--- a/kernel/conf/system.go
++++ b/kernel/conf/system.go
+@@ -79,7 +79,7 @@ func NewSystem() *System {
+ 		Name:               util.GetDeviceName(),
+ 		KernelVersion:      util.Ver,
+ 		NetworkProxy:       &NetworkProxy{},
+-		DownloadInstallPkg: true,
++		DownloadInstallPkg: false,
+ 		UpdateChannel:      UpdateChannelStable,
+ 	}
+ }
+diff --git a/kernel/go.mod b/kernel/go.mod
+index 96bb876..4fe3c39 100644
+--- a/kernel/go.mod
++++ b/kernel/go.mod
+@@ -106,10 +106,12 @@ require (
+ 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
+ 	github.com/dlclark/regexp2/v2 v2.6.0 // indirect
+ 	github.com/fatih/color v1.19.0 // indirect
++	github.com/kr/fs v0.1.0 // indirect
+ 	github.com/mattn/go-colorable v0.1.15 // indirect
+ 	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
+ 	github.com/olekukonko/errors v1.3.0 // indirect
+ 	github.com/olekukonko/ll v0.1.8 // indirect
++	github.com/pkg/sftp v1.13.9 // indirect
+ 	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect
+ )
+ 
+diff --git a/kernel/go.sum b/kernel/go.sum
+index 19e4a30..31d9735 100644
+--- a/kernel/go.sum
++++ b/kernel/go.sum
+@@ -342,6 +342,8 @@ github.com/klauspost/cpuid/v2 v2.4.0 h1:S6Hrbc7+ywsr0r+RLapfGBHfyefhCTwEh3A0tV91
+ github.com/klauspost/cpuid/v2 v2.4.0/go.mod h1:19jmZ9mjzoF//ddRSUsv0zfBTJWh3QJh9FNxZTMrGxU=
+ github.com/klippa-app/go-pdfium v1.19.8 h1:YxEOpo4pShbtcRDlvlryUNL8IK8fqxjU0qGbrct/nEk=
+ github.com/klippa-app/go-pdfium v1.19.8/go.mod h1:poSiUJYFicnfT8dazUfVnxcqPlKQxO3aHdGbOa1lG1w=
++github.com/kr/fs v0.1.0 h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=
++github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
+ github.com/kr/pretty v0.2.0/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
+ github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
+ github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
+@@ -414,6 +416,8 @@ github.com/pelletier/go-toml/v2 v2.4.3/go.mod h1:2gIqNv+qfxSVS7cM2xJQKtLSTLUE9V8
+ github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
+ github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+ github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
++github.com/pkg/sftp v1.13.9 h1:4NGkvGudBL7GteO3m6qnaQ4pC0Kvf0onSVc9gR3EWBw=
++github.com/pkg/sftp v1.13.9/go.mod h1:OBN7bVXdstkFFN/gdnHPUb5TE8eb8G1Rp9wCItqjkkA=
+ github.com/pkoukk/tiktoken-go v0.1.8 h1:85ENo+3FpWgAACBaEUVp+lctuTcYUO7BtmfhlN/QTRo=
+ github.com/pkoukk/tiktoken-go v0.1.8/go.mod h1:9NiV+i9mJKGj1rYOT+njbv+ZwA/zJxYdewGl6qVatpg=
+ github.com/pkoukk/tiktoken-go-loader v0.0.2 h1:LUKws63GV3pVHwH1srkBplBv+7URgmOmhSkRxsIvsK4=
+@@ -589,7 +593,11 @@ golang.org/x/arch v0.30.0/go.mod h1:0X+GdSIP+kL5wPmpK7sdkEVTt2XoYP0cSjQSbZBwOi8=
+ golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
+ golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=
+ golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
++golang.org/x/crypto v0.13.0/go.mod h1:y6Z2r+Rw4iayiXXAIxJIDAJ1zMW4yaTpebo8fPOliYc=
+ golang.org/x/crypto v0.14.0/go.mod h1:MVFd36DqK4CsrnJYDkBA3VC4m2GkXAM0PvzMCn4JQf4=
++golang.org/x/crypto v0.19.0/go.mod h1:Iy9bg/ha4yyC70EfRS8jz+B6ybOBKMaSxLj6P6oBDfU=
++golang.org/x/crypto v0.23.0/go.mod h1:CKFgDieR+mRhux2Lsu27y0fO304Db0wZe70UKqHu0v8=
++golang.org/x/crypto v0.31.0/go.mod h1:kDsLvtWBEx7MV9tJOj9bnXsPbxwJQ6csT/x4KIN4Ssk=
+ golang.org/x/crypto v0.55.0 h1:+KWHjbgOaAQ66dh/YlkZKHlz9ZUlq61AFirAR9ntP8M=
+ golang.org/x/crypto v0.55.0/go.mod h1:uq0V9dE/fzQuJtbnL+2EhWOE63vo164FY8xqEnV9xis=
+ golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8/go.mod h1:FeLwcggjj3mMvU+oOTbSwawSJRM1uh48EjtB4UJZlP0=
+@@ -600,6 +608,9 @@ golang.org/x/mobile v0.0.0-20251209145715-2553ed8ce294 h1:Cr6kbEvA6nqvdHynE4CtVK
+ golang.org/x/mobile v0.0.0-20251209145715-2553ed8ce294/go.mod h1:RdZ+3sb4CVgpCFnzv+I4haEpwqFfsfzlLHs3L7ok+e0=
+ golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4/go.mod h1:jJ57K6gSWd91VN4djpZkiMVwK6gcyfeH4XE8wZrZaV4=
+ golang.org/x/mod v0.8.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
++golang.org/x/mod v0.12.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
++golang.org/x/mod v0.15.0/go.mod h1:hTbmBsO62+eylJbnUtE2MGJUyE7QWk4xUqPFrRgJ+7c=
++golang.org/x/mod v0.17.0/go.mod h1:hTbmBsO62+eylJbnUtE2MGJUyE7QWk4xUqPFrRgJ+7c=
+ golang.org/x/mod v0.40.0 h1:hUv+3cXcdRHz08UmSiOob7sadHig73uo5bkXxQ/tvUs=
+ golang.org/x/mod v0.40.0/go.mod h1:0/weTWkPWGBikyTWAX3dkjVztMmBA5hM0DH6BElSupE=
+ golang.org/x/net v0.0.0-20180218175443-cbe0f9307d01/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
+@@ -613,7 +624,10 @@ golang.org/x/net v0.0.0-20210226172049-e18ecbb05110/go.mod h1:m0MpNAwzfU5UDzcl9v
+ golang.org/x/net v0.0.0-20220722155237-a158d28d115b/go.mod h1:XRhObCWvk6IyKnWLug+ECip1KBveYUHfp+8e9klMJ9c=
+ golang.org/x/net v0.6.0/go.mod h1:2Tu9+aMcznHK/AK1HMvgo6xiTLG5rD5rZLDS+rp2Bjs=
+ golang.org/x/net v0.10.0/go.mod h1:0qNGK6F8kojg2nk9dLZ2mShWaEBan6FAoqfSigmmuDg=
++golang.org/x/net v0.15.0/go.mod h1:idbUs1IY1+zTqbi8yxTbhexhEEk5ur9LInksu6HrEpk=
+ golang.org/x/net v0.17.0/go.mod h1:NxSsAGuq816PNPmqtQdLE42eU2Fs7NoRIZrHJAlaCOE=
++golang.org/x/net v0.21.0/go.mod h1:bIjVDfnllIU7BJ2DNgfnXvpSvtn8VRwhlsaeUTyUS44=
++golang.org/x/net v0.25.0/go.mod h1:JkAGAh7GEvH74S6FOH42FLoXpXbE/aqXSrIQjXgsiwM=
+ golang.org/x/net v0.58.0 h1:ynWG7rqYi4ccpTEuPZ2QGWHktVEM9DMCj9yzDE0Q7To=
+ golang.org/x/net v0.58.0/go.mod h1:YwCddHnFlT7eLQqVprV19OnhLGtc5xOKgE0RyqgfWAU=
+ golang.org/x/oauth2 v0.36.0 h1:peZ/1z27fi9hUOFCAZaHyrpWG5lwe0RJEEEeH0ThlIs=
+@@ -621,6 +635,10 @@ golang.org/x/oauth2 v0.36.0/go.mod h1:YDBUJMTkDnJS+A4BP4eZBjCqtokkg1hODuPjwiGPO7
+ golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.1.0/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
++golang.org/x/sync v0.3.0/go.mod h1:FU7BRWz2tNW+3quACPkgCx/L+uEAv1htQ0V83Z9Rj+Y=
++golang.org/x/sync v0.6.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
++golang.org/x/sync v0.7.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
++golang.org/x/sync v0.10.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
+ golang.org/x/sync v0.22.0 h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=
+ golang.org/x/sync v0.22.0/go.mod h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0=
+ golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+@@ -636,14 +654,23 @@ golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f/go.mod h1:oPkhp1MJrh7nUepCBc
+ golang.org/x/sys v0.1.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.5.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.8.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/sys v0.12.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.13.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/sys v0.17.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
++golang.org/x/sys v0.20.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
++golang.org/x/sys v0.28.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+ golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
+ golang.org/x/sys v0.47.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
++golang.org/x/telemetry v0.0.0-20240228155512-f48c80bd79b2/go.mod h1:TeRTkGYfJXctD9OcfyVLyj2J3IxLnKwHJR8f4D8a3YE=
+ golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
+ golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
+ golang.org/x/term v0.5.0/go.mod h1:jMB1sMXY+tzblOD4FWmEbocvup2/aLOaQEp7JmGp78k=
+ golang.org/x/term v0.8.0/go.mod h1:xPskH00ivmX89bAKVGSKKtLOWNx2+17Eiy94tnKShWo=
++golang.org/x/term v0.12.0/go.mod h1:owVbMEjm3cBLCHdkQu9b1opXd4ETQWc3BhuQGKgXgvU=
+ golang.org/x/term v0.13.0/go.mod h1:LTmsnFJwVN6bCy1rVCoS+qHT1HhALEFxKncY3WNNh4U=
++golang.org/x/term v0.17.0/go.mod h1:lLRBjIVuehSbZlaOtGMbcMncT+aqLLLmKrsjNrUguwk=
++golang.org/x/term v0.20.0/go.mod h1:8UkIAJTvZgivsXaD6/pH6U9ecQzZ45awqEOzuCvwpFY=
++golang.org/x/term v0.27.0/go.mod h1:iMsnZpn0cago0GOrHO2+Y7u7JPn5AylBrcoWkElMTSM=
+ golang.org/x/text v0.0.0-20180302201248-b7ef84aaf62a/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+ golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+ golang.org/x/text v0.3.3/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=
+@@ -652,6 +679,9 @@ golang.org/x/text v0.3.7/go.mod h1:u+2+/6zg+i71rQMx5EYifcz6MCKuco9NR6JIITiCfzQ=
+ golang.org/x/text v0.7.0/go.mod h1:mrYo+phRRbMaCq/xk9113O4dZlRixOauAjOtrjsXDZ8=
+ golang.org/x/text v0.9.0/go.mod h1:e1OnstbJyHTd6l/uOt8jFFHp6TRDWZR/bV3emEE/zU8=
+ golang.org/x/text v0.13.0/go.mod h1:TvPlkZtksWOMsz7fbANvkp4WM8x/WCo/om8BMLbz+aE=
++golang.org/x/text v0.14.0/go.mod h1:18ZOQIKpY8NJVqYksKHtTdi31H5itFRjB5/qKTNYzSU=
++golang.org/x/text v0.15.0/go.mod h1:18ZOQIKpY8NJVqYksKHtTdi31H5itFRjB5/qKTNYzSU=
++golang.org/x/text v0.21.0/go.mod h1:4IBbMaMmOPCJ8SecivzSH54+73PCFmPWxNTLm+vZkEQ=
+ golang.org/x/text v0.41.0 h1:vz/seA0lnX87Othu2f/0L24RcgrXD9/YFTSuGjj3rH8=
+ golang.org/x/text v0.41.0/go.mod h1:jvf1O8ajNzZqhSrQBPbutR/EB83Cc0CFrezNQIwbb5M=
+ golang.org/x/time v0.15.0 h1:bbrp8t3bGUeFOx08pvsMYRTCVSMk89u4tKbNOZbp88U=
+@@ -660,6 +690,8 @@ golang.org/x/tools v0.0.0-20180917221912-90fa682c2a6e/go.mod h1:n7NCudcB/nEzxVGm
+ golang.org/x/tools v0.0.0-20191119224855-298f0cb1881e/go.mod h1:b+2E5dAYhXwXZwtnZ6UAqBI28+e2cm9otk0dWdXHAEo=
+ golang.org/x/tools v0.1.12/go.mod h1:hNGJHUnrk76NpqgfD5Aqm5Crs+Hm0VOH/i9J2+nxYbc=
+ golang.org/x/tools v0.6.0/go.mod h1:Xwgl3UAJ/d3gWutnCtw505GrjyAbvKui8lOU390QaIU=
++golang.org/x/tools v0.13.0/go.mod h1:HvlwmtVNQAhOuCjW7xxvovg8wbNq7LwfXh/k7wXUl58=
++golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d/go.mod h1:aiJjzUbINMkxbQROHiO6hDPo2LHcIPhhQsa9DLh0yGk=
+ golang.org/x/tools v0.49.0 h1:3NI7VXzL9+1WZD52Dx2ttoPwD5DWrFGpl9mFZDlmisI=
+ golang.org/x/tools v0.49.0/go.mod h1:SJNXV9DBKT0UbdttsQjbfJlAE/q+y36++zo3uL3N0Oo=
+ golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+diff --git a/kernel/model/asset_download.go b/kernel/model/asset_download.go
+index 90aa05d..1433862 100644
+--- a/kernel/model/asset_download.go
++++ b/kernel/model/asset_download.go
+@@ -54,6 +54,8 @@ func assetDownloadScope(provider int, c *cloud.Conf, key []byte) string {
+ 		if c.WebDAV != nil {
+ 			identity = append(identity, c.WebDAV.Endpoint, c.WebDAV.Username)
+ 		}
++	case conf.ProviderSFTP:
++		identity = append(identity, c.Endpoint)
+ 	case conf.ProviderLocal:
+ 		if c.Local != nil {
+ 			identity = append(identity, filepath.Clean(c.Local.Endpoint))
+@@ -104,7 +106,7 @@ func checkAssetDownloadAccess() error {
+ 		if !IsSubscriber() {
+ 			return errors.New(Conf.Language(376))
+ 		}
+-	case conf.ProviderS3, conf.ProviderWebDAV, conf.ProviderLocal:
++	case conf.ProviderS3, conf.ProviderWebDAV, conf.ProviderLocal, conf.ProviderSFTP:
+ 		if !IsPaidUser() {
+ 			return errors.New(Conf.Language(376))
+ 		}
+diff --git a/kernel/model/cloud_account_auth.go b/kernel/model/cloud_account_auth.go
+index 8c5330c..0d2dbaa 100644
+--- a/kernel/model/cloud_account_auth.go
++++ b/kernel/model/cloud_account_auth.go
+@@ -19,7 +19,7 @@ func cloudAccountAuthFailureHandler(token string) func() {
+ 	}
+ 	server := util.GetCloudServer()
+ 	requestedUser := Conf.GetUser()
+-	if requestedUser == nil {
++	if requestedUser == nil || (requestedUser.UserId == "0" && requestedUser.UserToken == "token") {
+ 		return func() {}
+ 	}
+ 	return func() {
+diff --git a/kernel/model/cloud_service.go b/kernel/model/cloud_service.go
+index b236e60..96ad7ee 100644
+--- a/kernel/model/cloud_service.go
++++ b/kernel/model/cloud_service.go
+@@ -270,7 +270,6 @@ var (
+ 
+ func RefreshCheckJob2H() {
+ 	go refreshSubscriptionExpirationRemind()
+-	go refreshUser()
+ 	go refreshAnnouncement()
+ }
+ 
+diff --git a/kernel/model/conf.go b/kernel/model/conf.go
+index 335bb3f..3ca5747 100644
+--- a/kernel/model/conf.go
++++ b/kernel/model/conf.go
+@@ -21,6 +21,7 @@ import (
+ 	"context"
+ 	"crypto/sha1"
+ 	"fmt"
++	"github.com/siyuan-note/siyuan/kernel/sftpcloud"
+ 	"os"
+ 	"path/filepath"
+ 	"reflect"
+@@ -628,6 +629,9 @@ func InitConf() {
+ 	Conf.Sync.S3.Endpoint = util.NormalizeEndpoint(Conf.Sync.S3.Endpoint)
+ 	Conf.Sync.S3.Timeout = util.NormalizeTimeout(Conf.Sync.S3.Timeout)
+ 	Conf.Sync.S3.ConcurrentReqs = util.NormalizeConcurrentReqs(Conf.Sync.S3.ConcurrentReqs, conf.ProviderS3)
++	if Conf.Sync.SFTP == nil {
++		Conf.Sync.SFTP = sftpcloud.DefaultConfig()
++	}
+ 	if nil == Conf.Sync.WebDAV {
+ 		Conf.Sync.WebDAV = &conf.WebDAV{SkipTlsVerify: true}
+ 	}
+diff --git a/kernel/model/lan_sync.go b/kernel/model/lan_sync.go
+index 3e8dc97..056ab98 100644
+--- a/kernel/model/lan_sync.go
++++ b/kernel/model/lan_sync.go
+@@ -145,6 +145,10 @@ func lanSyncScope() string {
+ 		if nil != Conf.Sync.WebDAV {
+ 			return fmt.Sprintf("%s:%s", base, Conf.Sync.WebDAV.Endpoint)
+ 		}
++	case conf.ProviderSFTP:
++		if Conf.Sync.SFTP != nil {
++			return base + ":" + Conf.Sync.SFTP.Identity()
++		}
+ 	case conf.ProviderLocal:
+ 		if nil != Conf.Sync.Local {
+ 			return fmt.Sprintf("%s:%s", base, Conf.Sync.Local.Endpoint)
+diff --git a/kernel/model/repository.go b/kernel/model/repository.go
+index 34117d0..bc6d5cb 100644
+--- a/kernel/model/repository.go
++++ b/kernel/model/repository.go
+@@ -25,6 +25,7 @@ import (
+ 	"encoding/base64"
+ 	"errors"
+ 	"fmt"
++	"github.com/siyuan-note/siyuan/kernel/sftpcloud"
+ 	"math"
+ 	mathRand "math/rand"
+ 	"mime"
+@@ -1484,7 +1485,7 @@ func DownloadCloudSnapshot(tag, id string) (err error) {
+ 			util.PushErrMsg(Conf.Language(29), 5000)
+ 			return
+ 		}
+-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
++	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal, conf.ProviderSFTP:
+ 		if !IsPaidUser() {
+ 			util.PushErrMsg(Conf.Language(214), 5000)
+ 			return
+@@ -1519,7 +1520,8 @@ func UploadCloudSnapshot(tag, id string) (err error) {
+ 
+ 	handleCloudError := cloudRepoErrorHandler()
+ 	defer func() { handleCloudError(err) }()
+-	repo, err := newCloudRepositoryWithAssetSourceLocked()
++	var backupProvider *sftpcloud.SFTP
++	repo, err := newCloudRepositoryWithAssetSourceLocked(func(provider *sftpcloud.SFTP) { backupProvider = provider })
+ 	if err != nil {
+ 		return
+ 	}
+@@ -1530,7 +1532,7 @@ func UploadCloudSnapshot(tag, id string) (err error) {
+ 			util.PushErrMsg(Conf.Language(29), 5000)
+ 			return
+ 		}
+-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
++	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal, conf.ProviderSFTP:
+ 		if !IsPaidUser() {
+ 			util.PushErrMsg(Conf.Language(214), 5000)
+ 			return
+@@ -1539,7 +1541,17 @@ func UploadCloudSnapshot(tag, id string) (err error) {
+ 
+ 	util.PushEndlessProgress(Conf.Language(116))
+ 	defer util.PushClearProgress()
+-	uploadFileCount, uploadChunkCount, uploadBytes, err := repo.UploadTagIndex(tag, id, map[string]any{eventbus.CtxPushMsg: eventbus.CtxPushMsgToStatusBarAndProgress})
++	var uploadFileCount, uploadChunkCount int
++	var uploadBytes int64
++	upload := func() error {
++		uploadFileCount, uploadChunkCount, uploadBytes, err = repo.UploadTagIndex(tag, id, map[string]any{eventbus.CtxPushMsg: eventbus.CtxPushMsgToStatusBarAndProgress})
++		return err
++	}
++	if backupProvider != nil {
++		err = backupProvider.WithLease(upload)
++	} else {
++		err = upload()
++	}
+ 	if err != nil {
+ 		if errors.Is(err, dejavu.ErrCloudBackupCountExceeded) {
+ 			err = fmt.Errorf(Conf.Language(84), Conf.Language(154))
+@@ -1576,7 +1588,7 @@ func RemoveCloudRepoTag(tag string) (err error) {
+ 			util.PushErrMsg(Conf.Language(29), 5000)
+ 			return
+ 		}
+-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
++	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal, conf.ProviderSFTP:
+ 		if !IsPaidUser() {
+ 			util.PushErrMsg(Conf.Language(214), 5000)
+ 			return
+@@ -1612,7 +1624,7 @@ func GetCloudRepoTagSnapshots() (ret []*dejavu.Log, err error) {
+ 			util.PushErrMsg(Conf.Language(29), 5000)
+ 			return
+ 		}
+-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
++	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal, conf.ProviderSFTP:
+ 		if !IsPaidUser() {
+ 			util.PushErrMsg(Conf.Language(214), 5000)
+ 			return
+@@ -1652,7 +1664,7 @@ func GetCloudRepoSnapshots(page int) (ret []*dejavu.Log, pageCount, totalCount i
+ 			util.PushErrMsg(Conf.Language(29), 5000)
+ 			return
+ 		}
+-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
++	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal, conf.ProviderSFTP:
+ 		if !IsPaidUser() {
+ 			util.PushErrMsg(Conf.Language(214), 5000)
+ 			return
+@@ -2974,17 +2986,17 @@ func newRepository() (ret *dejavu.Repo, err error) {
+ }
+ 
+ // newCloudRepositoryWithAssetSourceLocked 在访问云端前校验配置，保留未配置云端时的本地快照功能。
+-func newCloudRepositoryWithAssetSourceLocked() (*dejavu.Repo, error) {
++func newCloudRepositoryWithAssetSourceLocked(captureSFTP ...func(*sftpcloud.SFTP)) (*dejavu.Repo, error) {
+ 	if Conf.Sync.Provider == conf.ProviderS3 {
+ 		if err := validateSyncS3(Conf.Sync.S3); err != nil {
+ 			return nil, err
+ 		}
+ 	}
+-	return newRepositoryWithAssetSourceLocked()
++	return newRepositoryWithAssetSourceLocked(captureSFTP...)
+ }
+ 
+ // newRepositoryWithAssetSourceLocked 由已持有来源锁的调用方创建仓库，避免读写锁递归等待。
+-func newRepositoryWithAssetSourceLocked() (ret *dejavu.Repo, err error) {
++func newRepositoryWithAssetSourceLocked(captureSFTP ...func(*sftpcloud.SFTP)) (ret *dejavu.Repo, err error) {
+ 	cloudConf, err := buildCloudConf()
+ 	if err != nil {
+ 		return
+@@ -3008,6 +3020,16 @@ func newRepositoryWithAssetSourceLocked() (ret *dejavu.Repo, err error) {
+ 		webdavClient.SetTimeout(time.Duration(cloudConf.WebDAV.Timeout) * time.Second)
+ 		webdavClient.SetTransport(httpclient.NewTransport(cloudConf.WebDAV.SkipTlsVerify))
+ 		cloudRepo = cloud.NewWebDAV(&cloud.BaseCloud{Conf: cloudConf}, webdavClient)
++	case conf.ProviderSFTP:
++		var provider *sftpcloud.SFTP
++		provider, err = sftpcloud.New(&cloud.BaseCloud{Conf: cloudConf}, Conf.Sync.SFTP)
++		if err != nil {
++			return
++		}
++		cloudRepo = provider
++		for _, capture := range captureSFTP {
++			capture(provider)
++		}
+ 	case conf.ProviderLocal:
+ 		cloudRepo = cloud.NewLocal(&cloud.BaseCloud{Conf: cloudConf})
+ 	default:
+@@ -3316,6 +3338,12 @@ func buildCloudConf() (ret *cloud.Conf, err error) {
+ 			Timeout:        Conf.Sync.WebDAV.Timeout,
+ 			ConcurrentReqs: Conf.Sync.WebDAV.ConcurrentReqs,
+ 		}
++	case conf.ProviderSFTP:
++		if Conf.Sync.SFTP == nil {
++			err = fmt.Errorf("SFTP configuration is required")
++			return
++		}
++		ret.Endpoint = Conf.Sync.SFTP.Identity()
+ 	case conf.ProviderLocal:
+ 		ret.Local = &cloud.ConfLocal{
+ 			Endpoint:       Conf.Sync.Local.Endpoint,
+diff --git a/kernel/model/sync.go b/kernel/model/sync.go
+index d249022..75fb8fc 100644
+--- a/kernel/model/sync.go
++++ b/kernel/model/sync.go
+@@ -380,7 +380,7 @@ func checkSync(boot, exit, byHand bool) bool {
+ 			Conf.Save()
+ 			return false
+ 		}
+-	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
++	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal, conf.ProviderSFTP:
+ 		if !IsPaidUser() {
+ 			Conf.Sync.Enabled = false
+ 			Conf.Save()
+@@ -687,6 +687,23 @@ func SetSyncProviderWebDAV(webdav *conf.WebDAV) (err error) {
+ 	return
+ }
+ 
++func SetSyncProviderSFTP(config *conf.SFTP) (err error) {
++	release := lockAssetSourceChange()
++	defer release()
++	if err = config.Normalize(); err != nil {
++		return
++	}
++	if Conf.Sync.Provider == conf.ProviderSFTP && (Conf.Sync.SFTP == nil || Conf.Sync.SFTP.Identity() != config.Identity()) {
++		if err = requireCompleteAssetDownloads(); err != nil {
++			return
++		}
++	}
++	Conf.Sync.SFTP = config
++	Conf.Save()
++	refreshLANSyncManager()
++	return
++}
++
+ func SetSyncProviderLocal(local *conf.Local) (err error) {
+ 	release := lockAssetSourceChange()
+ 	defer release()
+@@ -749,7 +766,7 @@ func CreateCloudSyncDir(name string) (err error) {
+ 	assetDownloadSourceMu.RLock()
+ 	defer assetDownloadSourceMu.RUnlock()
+ 	switch Conf.Sync.Provider {
+-	case conf.ProviderSiYuan, conf.ProviderLocal:
++	case conf.ProviderSiYuan, conf.ProviderLocal, conf.ProviderSFTP:
+ 		break
+ 	default:
+ 		err = errors.New(Conf.Language(131))
+@@ -786,7 +803,7 @@ func RemoveCloudSyncDir(name string) (err error) {
+ 		}
+ 	}
+ 	switch Conf.Sync.Provider {
+-	case conf.ProviderSiYuan, conf.ProviderLocal:
++	case conf.ProviderSiYuan, conf.ProviderLocal, conf.ProviderSFTP:
+ 		break
+ 	default:
+ 		err = errors.New(Conf.Language(131))
+diff --git a/kernel/model/updater.go b/kernel/model/updater.go
+index 8a39a62..6db50b9 100644
+--- a/kernel/model/updater.go
++++ b/kernel/model/updater.go
+@@ -267,6 +267,10 @@ func isVersionUpToDate(releaseVer string) bool {
+ var skipInstallPkgPlatformCached = -1
+ 
+ func skipNewVerInstallPkg() bool {
++	// Conf.System.DownloadInstallPkg(自动下载更新安装包) 强制赋值为false
++	Conf.System.DownloadInstallPkg = false
++	Conf.Save()
++
+ 	if skipInstallPkgPlatformCached == -1 {
+ 		skipInstallPkgPlatformCached = 0
+ 		if !gulu.OS.IsWindows() && !gulu.OS.IsDarwin() {
+diff --git a/kernel/model/updater_release.go b/kernel/model/updater_release.go
+index 1be67f8..b92a259 100644
+--- a/kernel/model/updater_release.go
++++ b/kernel/model/updater_release.go
+@@ -39,8 +39,8 @@ import (
+ )
+ 
+ const (
+-	githubReleasesURL            = "https://api.github.com/repos/siyuan-note/siyuan/releases?per_page=100"
+-	githubReleaseURLPrefix       = "https://github.com/siyuan-note/siyuan/releases/tag/v"
++	githubReleasesURL            = "https://api.github.com/repos/appdev/siyuan-unlock/releases?per_page=100"
++	githubReleaseURLPrefix       = "https://github.com/appdev/siyuan-unlock/releases/tag/v"
+ 	githubAPIReleaseCacheSeconds = int64(6 * 60 * 60)
+ 	maxChecksumManifestSize      = int64(1024 * 1024)
+ )
+@@ -80,9 +80,6 @@ var (
+ 
+ func getUpdateRelease(force bool) (*updateRelease, error) {
+ 	channel := Conf.System.UpdateChannel
+-	if conf.UpdateChannelStable == channel {
+-		return getStableUpdateRelease(force)
+-	}
+ 	if !isValidUpdateChannel(channel) {
+ 		return nil, errors.New("update channel is invalid")
+ 	}
+diff --git a/kernel/model/updater_release_test.go b/kernel/model/updater_release_test.go
+index f1ebd35..2c561f3 100644
+--- a/kernel/model/updater_release_test.go
++++ b/kernel/model/updater_release_test.go
+@@ -21,10 +21,45 @@ import (
+ 	"path/filepath"
+ 	"strings"
+ 	"testing"
++	"time"
+ 
+ 	"github.com/siyuan-note/siyuan/kernel/conf"
+ )
+ 
++func TestStableUpdateUsesUnlockGitHubRelease(t *testing.T) {
++	originalConf := Conf
++	Conf = NewAppConf()
++	Conf.System = conf.NewSystem()
++	Conf.System.UpdateChannel = conf.UpdateChannelStable
++
++	githubReleasesLock.Lock()
++	originalReleases := cachedGitHubReleases
++	originalCacheTime := githubReleasesCacheTime
++	cachedGitHubReleases = []*githubRelease{{TagName: "v9.9.9"}}
++	githubReleasesCacheTime = time.Now().Unix()
++	githubReleasesLock.Unlock()
++
++	t.Cleanup(func() {
++		Conf = originalConf
++		githubReleasesLock.Lock()
++		cachedGitHubReleases = originalReleases
++		githubReleasesCacheTime = originalCacheTime
++		githubReleasesLock.Unlock()
++	})
++
++	release, err := getUpdateRelease(false)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if "9.9.9" != release.Version {
++		t.Fatalf("unexpected stable version: %q", release.Version)
++	}
++	const wantURL = "https://github.com/appdev/siyuan-unlock/releases/tag/v9.9.9"
++	if wantURL != release.ReleaseURL {
++		t.Fatalf("unexpected stable release URL: %q", release.ReleaseURL)
++	}
++}
++
+ func TestIsReleaseAllowed(t *testing.T) {
+ 	tests := []struct {
+ 		channel string

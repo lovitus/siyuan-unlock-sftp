@@ -22,10 +22,16 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [v3.8.3, v3.8.4]
     steps:
       - uses: actions/checkout@v4
       - name: Apply patches to supported SiYuan release
-        run: bash scripts/prepare-sftp-source.sh v3.8.3 "$RUNNER_TEMP/siyuan-sftp-test"
+        env:
+          VERSION: ${{ matrix.version }}
+        run: bash scripts/prepare-sftp-source.sh "$VERSION" "$RUNNER_TEMP/siyuan-sftp-test"
       - uses: actions/setup-go@v5
         with:
           go-version-file: ${{ runner.temp }}/siyuan-sftp-test/kernel/go.mod
