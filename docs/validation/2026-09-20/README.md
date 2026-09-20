@@ -92,3 +92,20 @@ Android runtime behavior has not been tested.
 All six desktop build jobs and Android have now succeeded. iOS and the
 four-platform container build remain in progress; no failure is reported in
 the latest snapshot. Automatic release eligibility is still withheld.
+
+## Live macOS → Windows → macOS SFTP round trip: passed
+
+The downloaded macOS ARM64 packaged kernel created and uploaded a document.
+The downloaded Windows installer kernel, running on Windows Server 2025,
+downloaded it from the same live isolated SFTP server, appended a paragraph,
+and uploaded the change. The Mac then downloaded the Windows change. Both
+markers were present and the final document JSON matched exactly on both ends.
+
+- [Windows peer run](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35501168826).
+- [All three phase reports and equality assertion](v3.8.4-cross-platform.json).
+
+The temporary relay forwarded SSH to an isolated test server with a random
+password and a pinned host key. This establishes sequential mixed-platform
+round-trip behavior for the tested packaged kernels, not simultaneous editing,
+GUI interaction, or mobile runtime behavior. iOS and Docker build completion
+and container runtime verification remain pending.

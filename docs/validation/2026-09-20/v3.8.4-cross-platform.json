@@ -1,0 +1,294 @@
+{
+  "status": "passed",
+  "source_revision": "08f08b65565b1d7970f82e4b2965a5411ecc4865",
+  "build_run": "https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35500058703",
+  "windows_run": "https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35501168826",
+  "transport": "One isolated live AsyncSSH SFTP server; Windows reached it through a temporary Cloudflare TCP relay, with password authentication and pinned SSH host key.",
+  "scope": "Sequential macOS ARM64 packaged kernel to Windows packaged kernel to macOS round trip; no concurrent-edit or mobile runtime claim.",
+  "document_json_equal": true,
+  "phases": [
+    {
+      "runtime": "native",
+      "sftp_server": "Shared isolated live AsyncSSH server (Windows via TCP relay)",
+      "events": [
+        {
+          "device": "client",
+          "endpoint": "/api/setting/getCloudUser",
+          "code": 0,
+          "seconds": 0.008
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncEnable",
+          "code": 0,
+          "seconds": 0.003
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/repo/initRepoKeyFromPassphrase",
+          "code": 0,
+          "seconds": 2.135
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncProviderSFTP",
+          "code": 0,
+          "seconds": 0.009
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncProvider",
+          "code": 0,
+          "seconds": 0.009
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncMode",
+          "code": 0,
+          "seconds": 0.01
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/createCloudSyncDir",
+          "code": 0,
+          "seconds": 0.044
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setCloudSyncDir",
+          "code": 0,
+          "seconds": 0.008
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncEnable",
+          "code": 0,
+          "seconds": 0.007
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/notebook/createNotebook",
+          "code": 0,
+          "seconds": 0.119
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/filetree/createDocWithMd",
+          "code": 0,
+          "seconds": 0.274
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/performSync",
+          "code": 0,
+          "seconds": 0.246
+        }
+      ],
+      "kernel": "/private/tmp/sftp384-cross-mount/SiYuan.app/Contents/Resources/kernel/SiYuan-Kernel",
+      "kernel_sha256": "2959aa45babb70e94b659782352351ae10267ca91a81516024e05e38597b0f8e",
+      "phase": "seed",
+      "status": "passed",
+      "handoff": {
+        "cloud": "crossb8d903a0",
+        "notebook": "20260920170115-5k97abx",
+        "document": "20260920170115-tif39nb"
+      }
+    },
+    {
+      "runtime": "native",
+      "sftp_server": "Shared isolated live AsyncSSH server (Windows via TCP relay)",
+      "events": [
+        {
+          "device": "client",
+          "endpoint": "/api/setting/getCloudUser",
+          "code": 0,
+          "seconds": 0.015
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncEnable",
+          "code": 0,
+          "seconds": 0.0
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/repo/initRepoKeyFromPassphrase",
+          "code": 0,
+          "seconds": 2.156
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncProviderSFTP",
+          "code": 0,
+          "seconds": 0.0
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncProvider",
+          "code": 0,
+          "seconds": 0.0
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncMode",
+          "code": 0,
+          "seconds": 0.016
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setCloudSyncDir",
+          "code": 0,
+          "seconds": 0.0
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/setSyncEnable",
+          "code": 0,
+          "seconds": 0.016
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/performSync",
+          "code": 0,
+          "seconds": 124.468
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/block/getBlockInfo",
+          "code": 3,
+          "seconds": 0.0
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/block/getBlockInfo",
+          "code": 0,
+          "seconds": 0.0
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/block/appendBlock",
+          "code": 0,
+          "seconds": 0.0
+        },
+        {
+          "device": "client",
+          "endpoint": "/api/sync/performSync",
+          "code": 0,
+          "seconds": 118.609
+        }
+      ],
+      "kernel": "D:\\a\\_temp\\app\\resources\\kernel\\SiYuan-Kernel.exe",
+      "kernel_sha256": "920827eb7ec5ac14a5a7c1feab6c33085a38e75acc302317d7ead3364804efdd",
+      "phase": "peer",
+      "document_json": {
+        "ID": "20260920170115-tif39nb",
+        "Spec": "2",
+        "Type": "NodeDocument",
+        "Properties": {
+          "id": "20260920170115-tif39nb",
+          "title": "cross-platform",
+          "type": "doc",
+          "updated": "20260920090421"
+        },
+        "Children": [
+          {
+            "ID": "20260920170115-xd37pfg",
+            "Type": "NodeParagraph",
+            "Properties": {
+              "id": "20260920170115-xd37pfg",
+              "updated": "20260920170115"
+            },
+            "Children": [
+              {
+                "Type": "NodeText",
+                "Data": "from-macOS-through-SFTP"
+              }
+            ]
+          },
+          {
+            "ID": "20260920090421-l2djobm",
+            "Type": "NodeParagraph",
+            "Properties": {
+              "id": "20260920090421-l2djobm",
+              "updated": "20260920090421"
+            },
+            "Children": [
+              {
+                "Type": "NodeText",
+                "Data": "edited-on-Windows-through-SFTP"
+              }
+            ]
+          }
+        ]
+      },
+      "status": "passed",
+      "handoff": {
+        "cloud": "crossb8d903a0",
+        "notebook": "20260920170115-5k97abx",
+        "document": "20260920170115-tif39nb"
+      }
+    },
+    {
+      "runtime": "native",
+      "sftp_server": "Shared isolated live AsyncSSH server (Windows via TCP relay)",
+      "events": [
+        {
+          "device": "client",
+          "endpoint": "/api/sync/performSync",
+          "code": 0,
+          "seconds": 0.078
+        }
+      ],
+      "kernel": "/private/tmp/sftp384-cross-mount/SiYuan.app/Contents/Resources/kernel/SiYuan-Kernel",
+      "kernel_sha256": "2959aa45babb70e94b659782352351ae10267ca91a81516024e05e38597b0f8e",
+      "phase": "verify",
+      "document_json": {
+        "ID": "20260920170115-tif39nb",
+        "Spec": "2",
+        "Type": "NodeDocument",
+        "Properties": {
+          "id": "20260920170115-tif39nb",
+          "title": "cross-platform",
+          "type": "doc",
+          "updated": "20260920090421"
+        },
+        "Children": [
+          {
+            "ID": "20260920170115-xd37pfg",
+            "Type": "NodeParagraph",
+            "Properties": {
+              "id": "20260920170115-xd37pfg",
+              "updated": "20260920170115"
+            },
+            "Children": [
+              {
+                "Type": "NodeText",
+                "Data": "from-macOS-through-SFTP"
+              }
+            ]
+          },
+          {
+            "ID": "20260920090421-l2djobm",
+            "Type": "NodeParagraph",
+            "Properties": {
+              "id": "20260920090421-l2djobm",
+              "updated": "20260920090421"
+            },
+            "Children": [
+              {
+                "Type": "NodeText",
+                "Data": "edited-on-Windows-through-SFTP"
+              }
+            ]
+          }
+        ]
+      },
+      "status": "passed",
+      "handoff": {
+        "cloud": "crossb8d903a0",
+        "notebook": "20260920170115-5k97abx",
+        "document": "20260920170115-tif39nb"
+      }
+    }
+  ]
+}
