@@ -1,0 +1,70 @@
+name: Verify published Linux SFTP package
+on:
+  workflow_run:
+    workflows: ['Build and verify SFTP review']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      buildRun:
+        description: Review build containing desktop-linux.tar.gz
+        type: string
+        required: true
+      revision:
+        description: Exact source revision of the package
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  smoke:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'master')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download and execute the exact packaged Linux kernel
+        env:
+          BUILD_RUN: ${{ inputs.buildRun || github.event.workflow_run.id }}
+          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN" =~ ^[0-9]+$ && "$REVISION" =~ ^[a-f0-9]{40}$ ]]
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name desktop-linux.tar.gz --dir "$RUNNER_TEMP/package"
+          grep -qx "patch_commit=$REVISION" "$RUNNER_TEMP/package/source-revision.txt"
+          archive=$(find "$RUNNER_TEMP/package" -name '*.tar.gz' -type f)
+          test -f "$archive"
+          sha256sum "$archive" > "$RUNNER_TEMP/package-sha256.txt"
+          cp "$RUNNER_TEMP/package/source-revision.txt" "$RUNNER_TEMP/source-revision.txt"
+          mkdir "$RUNNER_TEMP/extracted"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/extracted"
+          kernel=$(find "$RUNNER_TEMP/extracted" -name SiYuan-Kernel -type f)
+          test -f "$kernel"
+          resources=$(dirname "$(dirname "$kernel")")
+          python -m pip install asyncssh
+          python scripts/validation/asyncssh_server.py --directory "$RUNNER_TEMP/sftp-server" > "$RUNNER_TEMP/sftp-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            test ! -f "$RUNNER_TEMP/sftp-server/sftp.json" || break
+            kill -0 "$server_pid"
+            sleep 1
+          done
+          python scripts/validation/verify_sftp_artifact.py \
+            --kernel "$kernel" --resources "$resources" \
+            --sftp-config "$RUNNER_TEMP/sftp-server/sftp.json" \
+            --output "$RUNNER_TEMP/sftp-linux-validation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-runtime-validation
+          path: |
+            ${{ runner.temp }}/sftp-linux-validation/report.json
+            ${{ runner.temp }}/sftp-linux-validation/*.log
+            ${{ runner.temp }}/sftp-server.log
+            ${{ runner.temp }}/package-sha256.txt
+            ${{ runner.temp }}/source-revision.txt
