@@ -1,5 +1,8 @@
 name: Verify published Windows SFTP package
 on:
+  workflow_run:
+    workflows: ['Build and verify SFTP review']
+    types: [completed]
   workflow_dispatch:
     inputs:
       buildRun:
@@ -17,6 +20,7 @@ permissions:
   actions: read
 jobs:
   smoke:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'master')
     runs-on: windows-2025
     timeout-minutes: 15
     steps:
@@ -26,8 +30,8 @@ jobs:
           python-version: '3.12'
       - name: Download and extract exact Windows package
         env:
-          BUILD_RUN: ${{ inputs.buildRun }}
-          REVISION: ${{ inputs.revision }}
+          BUILD_RUN: ${{ inputs.buildRun || github.event.workflow_run.id }}
+          REVISION: ${{ inputs.revision || github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
