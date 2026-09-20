@@ -38,8 +38,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-upstream-release.py
 
-  desktop:
+  preflight:
     needs: check
+    if: needs.check.outputs.pending == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source patches before starting platform builds
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          bash scripts/prepare-sftp-source.sh "$VERSION" "$RUNNER_TEMP/sftp-desktop" desktop
+          bash scripts/prepare-sftp-source.sh "$VERSION" "$RUNNER_TEMP/sftp-docker" docker
+
+  desktop:
+    needs: [check, preflight]
     if: needs.check.outputs.pending == 'true'
     uses: ./.github/workflows/desktop-release.yml
     with:
@@ -48,7 +61,7 @@ jobs:
     secrets: inherit
 
   android:
-    needs: check
+    needs: [check, preflight]
     if: needs.check.outputs.pending == 'true'
     uses: ./.github/workflows/release-android.yml
     with:
@@ -57,7 +70,7 @@ jobs:
     secrets: inherit
 
   ios:
-    needs: check
+    needs: [check, preflight]
     if: needs.check.outputs.pending == 'true'
     uses: ./.github/workflows/release-ios.yml
     with:
@@ -66,7 +79,7 @@ jobs:
     secrets: inherit
 
   docker:
-    needs: check
+    needs: [check, preflight]
     if: needs.check.outputs.pending == 'true'
     uses: ./.github/workflows/release-docker.yml
     with:

@@ -195,6 +195,26 @@ mobile applications still need separate validation.
 
 ## Review builds
 
+### Scheduled release compatibility gate
+
+Scheduled checks still track the latest stable `appdev/siyuan-unlock` release.
+Only versions listed in `patches/sftp/supported-releases.json` may start an
+automatic release build. An unvalidated version is reported in the Actions job
+summary as waiting for patch compatibility; it is neither built nor published.
+Existing drafts are left untouched. This avoids repeatedly attempting the same
+known-incompatible patch across every platform on each six-hour check.
+
+Before adding a version to that list, adapt and validate its patches, run the
+SFTP integration tests, and verify review builds. Supported pending versions
+also run desktop/container source preparation in a single preflight job before
+the platform matrix starts. Failures in these supported builds remain failures.
+
+On 2026-09-19 (Asia/Singapore), upstream `v3.8.4` exposed incompatible account,
+API, and SFTP patch contexts, starting seven consecutive scheduled failures.
+`v3.8.4` is currently awaiting adaptation; `v3.8.3` remains the validated baseline.
+The compatibility gate stops redundant builds, not the upstream schedule or
+the user's notification settings.
+
 The **Build and verify SFTP review** workflow builds the existing desktop,
 Android, iOS and container matrices from an explicit official version. It stores
 client packages as Actions artifacts with `source-revision.txt` identifying the

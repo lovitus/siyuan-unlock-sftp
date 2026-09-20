@@ -52,6 +52,18 @@ class ReleaseTrackingTest(unittest.TestCase):
         self.assertIn('--draft', args)
         self.assertIn('example/siyuan', args)
 
+    def test_unsupported_new_version_waits_without_creating_release(self):
+        output, mutations, calls = self.run_check(error=404, tag='v3.8.4')
+        self.assertIn('pending=false', output)
+        self.assertIn('compatibility_pending=true', output)
+        self.assertFalse(mutations)
+        self.assertFalse(any('/contents/' in path for path in calls))
+
+    def test_unsupported_draft_does_not_repeat_failed_build(self):
+        output, mutations, _ = self.run_check({'draft': True}, tag='v3.8.4')
+        self.assertIn('compatibility_pending=true', output)
+        self.assertFalse(mutations)
+
     def test_api_failure_never_creates_release(self):
         with self.assertRaises(HTTPError):
             self.run_check(error=403)

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -33,6 +34,20 @@ def main():
             raise
         release = None
     pending = release is None or release['draft']
+    supported = json.loads((Path(__file__).resolve().parent.parent /
+                            'patches/sftp/supported-releases.json').read_text())['versions']
+    if pending and tag not in supported:
+        message = (f'{tag} is waiting for SFTP patch compatibility validation. '
+                   'No build was attempted and no release was published. '
+                   'Scheduled upstream checks remain enabled.')
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write(f'pending=false\nversion={tag}\ncompatibility_pending=true\n')
+        print(message)
+        summary = os.environ.get('GITHUB_STEP_SUMMARY')
+        if summary:
+            with open(summary, 'a') as output:
+                output.write('## Waiting for patch compatibility\n\n' + message + '\n')
+        return
     package = api(f'repos/siyuan-note/siyuan/contents/app/package.json?ref={tag}')
     import base64
     package = json.loads(base64.b64decode(package['content']))
