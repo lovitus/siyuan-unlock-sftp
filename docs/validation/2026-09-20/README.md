@@ -65,3 +65,12 @@ artifacts have also appeared; Windows runtime verification was dispatched as
 [run 35500596314](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35500596314).
 The full matrix and container runtime results are still pending; the supported
 automatic-release list remains unchanged.
+
+## Downloaded Windows artifact: passed
+
+Run `35500596314` completed successfully: the extracted v3.8.4 Windows installer
+kernel passed all nine lifecycle/configuration assertions on Windows Server
+2025. [Runtime report](v3.8.4-windows-native.json). The full matrix currently has
+successful Android, Windows, macOS Intel and macOS ARM64 builds; Linux packaging,
+iOS and Docker are still running without a reported failure at this snapshot.
+Independent macOS and Windows runs do not prove live mixed-platform convergence.
