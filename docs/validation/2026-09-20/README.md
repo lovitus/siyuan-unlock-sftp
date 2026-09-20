@@ -74,3 +74,21 @@ kernel passed all nine lifecycle/configuration assertions on Windows Server
 successful Android, Windows, macOS Intel and macOS ARM64 builds; Linux packaging,
 iOS and Docker are still running without a reported failure at this snapshot.
 Independent macOS and Windows runs do not prove live mixed-platform convergence.
+
+## Linux native runtime and Android package checks
+
+[Linux runtime CI](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35500809204)
+downloaded the exact AMD64 desktop archive, checked its provenance, and executed
+the packaged kernel on Ubuntu 24.04. All nine configuration/sync/backup/restore
+assertions passed against the independent SFTP server.
+[Native report](v3.8.4-linux-native.json).
+
+Both Android ARM64 APK variants passed ZIP integrity checks, and their native
+libraries contain the SFTP ownership-protection code. The downloaded Linux
+archive's kernel is x86-64 ELF and has the same marker. These package inspections
+and hashes are in [package evidence](v3.8.4-android-linux-packages.json).
+Android runtime behavior has not been tested.
+
+All six desktop build jobs and Android have now succeeded. iOS and the
+four-platform container build remain in progress; no failure is reported in
+the latest snapshot. Automatic release eligibility is still withheld.

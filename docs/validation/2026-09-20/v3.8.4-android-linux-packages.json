@@ -1,0 +1,29 @@
+[
+  {
+    "file": "siyuan-unlock-v3.8.4-android-arm64-appdev.apk",
+    "bytes": 96671130,
+    "sha256": "cc7f89a34ae302c834e78081a605930127edc131c4413e5ffb979f20a2db9d2d",
+    "patch_commit": "08f08b65565b1d7970f82e4b2965a5411ecc4865",
+    "build_run": 35500058703,
+    "zip_integrity": "passed",
+    "sftp_ownership_protection_marker": true
+  },
+  {
+    "file": "siyuan-unlock-v3.8.4-android-arm64.apk",
+    "bytes": 96671130,
+    "sha256": "bcb82f5b6f9e99ef62f4e811d9a5c0bb45cc8ff4aa34e0c4bbb3755ad392bc45",
+    "patch_commit": "08f08b65565b1d7970f82e4b2965a5411ecc4865",
+    "build_run": 35500058703,
+    "zip_integrity": "passed",
+    "sftp_ownership_protection_marker": true
+  },
+  {
+    "file": "siyuan-3.8.4-linux.tar.gz",
+    "bytes": 247018332,
+    "sha256": "da1505b44ed984876c74393f0af5b6f69bdd4e0bc35cbd6bab19af46d2811fe5",
+    "patch_commit": "08f08b65565b1d7970f82e4b2965a5411ecc4865",
+    "build_run": 35500058703,
+    "elf_machine": 62,
+    "sftp_ownership_protection_marker": true
+  }
+]
