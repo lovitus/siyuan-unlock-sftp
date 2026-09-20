@@ -48,3 +48,20 @@ the in-progress v3.8.4 build, so no artifact runtime pass is claimed here.
 The automatic-release supported-version list still contains only v3.8.3.
 Do not add v3.8.4 until review builds and artifact verification pass. This keeps
 the fixed scheduled check from restarting an unvalidated release matrix.
+
+## Downloaded macOS ARM64 artifact: passed
+
+The actual v3.8.4 DMG from review build `35500058703` has now been downloaded,
+its `source-revision.txt` matched to the full `08f08b655` commit, and its image
+checksums verified by `hdiutil` before mounting read-only. Its packaged kernel
+passed all nine assertions on both a GitHub macOS runner and the local Mac.
+
+- [Successful native artifact CI](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35500460807).
+- [Local run of the downloaded packaged kernel](v3.8.4-dmg-native.json).
+- [DMG SHA-256 and provenance](v3.8.4-dmg-sha256.json).
+
+The local read-only mount has been detached after testing. Android and Windows
+artifacts have also appeared; Windows runtime verification was dispatched as
+[run 35500596314](https://github.com/lovitus/siyuan-unlock-sftp/actions/runs/35500596314).
+The full matrix and container runtime results are still pending; the supported
+automatic-release list remains unchanged.
