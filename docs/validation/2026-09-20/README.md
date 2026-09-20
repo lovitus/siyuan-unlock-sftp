@@ -135,3 +135,12 @@ its executable is ARM64 Mach-O and contains the SFTP ownership-protection marker
 This is an unsigned device IPA from the existing upstream build configuration.
 No iPhone/iPad runtime or installed-app validation is claimed. The Docker build
 and container runtime checks are the remaining review-build gates.
+
+## Validation harness regression: passed
+
+After extracting reusable functions for the mixed-platform scenario, the current
+normal validator was rerun against the downloaded macOS ARM64 packaged kernel
+and a fresh isolated SFTP server with a random password. All nine original
+assertions passed, including backup restore into a third workspace after purge.
+[Report](v3.8.4-harness-regression.json). The temporary server and processes were
+stopped and the read-only DMG was detached after completion.
