@@ -1,5 +1,19 @@
 # v3.8.4 compatibility migration
 
+## Current validation status
+
+Patch adaptation is complete at `08f08b65565b1d7970f82e4b2965a5411ecc4865`.
+The six desktop jobs, Android, and iOS in review run `35500058703` have succeeded.
+Only the four-platform Docker build remains running; container runtime checks
+and release eligibility are pending. v3.8.4 is still a draft, not a published release.
+
+Downloaded macOS ARM64, Windows and Linux AMD64 packaged kernels passed the
+nine lifecycle/configuration assertions. A live sequential macOS → Windows →
+macOS round trip also passed with exact final document JSON equality.
+Android and iOS have package-integrity checks only, not mobile runtime testing.
+The sections below record individual stages, including earlier pending states.
+
+
 Patch source: `08f08b655`. The version-specific source changes are in
 `patches/sftp/source-v3.8.4.patch`; provider implementation/tests remain shared
 in `overlays/kernel/sftpcloud`. The v3.8.3 preparation path is preserved.
@@ -109,3 +123,15 @@ password and a pinned host key. This establishes sequential mixed-platform
 round-trip behavior for the tested packaged kernels, not simultaneous editing,
 GUI interaction, or mobile runtime behavior. iOS and Docker build completion
 and container runtime verification remain pending.
+
+## Downloaded iOS package: static checks passed
+
+The iOS build completed successfully. The downloaded IPA matches review run
+`35500058703`, official source tag v3.8.4, and patch commit `08f08b655`.
+All ZIP entries passed integrity checks. The application reports version v3.8.4;
+its executable is ARM64 Mach-O and contains the SFTP ownership-protection marker.
+[Package metadata, SHA-256, and provenance](v3.8.4-ios-package.json).
+
+This is an unsigned device IPA from the existing upstream build configuration.
+No iPhone/iPad runtime or installed-app validation is claimed. The Docker build
+and container runtime checks are the remaining review-build gates.

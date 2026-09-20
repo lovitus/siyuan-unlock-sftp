@@ -211,7 +211,10 @@ the platform matrix starts. Failures in these supported builds remain failures.
 
 On 2026-09-19 (Asia/Singapore), upstream `v3.8.4` exposed incompatible account,
 API, and SFTP patch contexts, starting seven consecutive scheduled failures.
-`v3.8.4` is currently awaiting adaptation; `v3.8.3` remains the validated baseline.
+`v3.8.4` patch adaptation is complete, with desktop package runtime checks and
+live macOS/Windows SFTP exchange passing. Its full release gate is still waiting
+for container build/runtime verification; `v3.8.3` remains the released baseline.
+See [v3.8.4 validation evidence](validation/2026-09-20/README.md).
 The compatibility gate stops redundant builds, not the upstream schedule or
 the user's notification settings.
 

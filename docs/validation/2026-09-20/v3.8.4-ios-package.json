@@ -1,0 +1,18 @@
+{
+  "file": "siyuan-v3.8.4-ios.ipa",
+  "bytes": 135463731,
+  "sha256": "853599cb34aef8e0735bab6601374dbb79e15060a9d7cc26bd8a131e7cb23c10",
+  "source_revision": [
+    "patch_commit=08f08b65565b1d7970f82e4b2965a5411ecc4865",
+    "source_tag=v3.8.4",
+    "run_id=35500058703"
+  ],
+  "zip_integrity": "passed",
+  "bundle_version": "v3.8.4",
+  "bundle_build": "1",
+  "executable": "siyuan-ios",
+  "macho_cpu_type": 16777228,
+  "architecture": "arm64",
+  "sftp_ownership_protection_marker": true,
+  "runtime_validation": "not performed; unsigned device IPA built by existing upstream matrix"
+}
