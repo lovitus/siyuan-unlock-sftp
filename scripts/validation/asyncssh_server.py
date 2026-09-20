@@ -1,4 +1,4 @@
-import argparse, asyncio, asyncssh, json, os
+import argparse, asyncio, asyncssh, json, os, secrets
 from pathlib import Path
 
 parser = argparse.ArgumentParser()
@@ -17,6 +17,7 @@ base.mkdir(parents=True, exist_ok=False)
 root = base / "remote"
 (root / "storage").mkdir(parents=True, exist_ok=True)
 key = asyncssh.generate_private_key("ssh-ed25519")
+password = secrets.token_urlsafe(32)
 
 
 class Server(asyncssh.SSHServer):
@@ -26,8 +27,10 @@ class Server(asyncssh.SSHServer):
     def password_auth_supported(self):
         return True
 
-    def validate_password(self, username, password):
-        return username == "tester" and password == "isolated-sftp-validation"
+    def validate_password(self, username, supplied_password):
+        return username == "tester" and secrets.compare_digest(
+            supplied_password, password
+        )
 
 
 class DelayedSFTP(asyncssh.SFTPServer):
@@ -52,7 +55,7 @@ async def main():
         host="127.0.0.1",
         port=server.get_port(),
         username="tester",
-        password="isolated-sftp-validation",
+        password=password,
         path="/storage",
         hostKey=key.get_fingerprint("sha256"),
         timeout=30,

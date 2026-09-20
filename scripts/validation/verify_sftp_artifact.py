@@ -76,9 +76,9 @@ def call(d, endpoint, data=None, expect=0):
     return result.get("data")
 
 
-def launch(name):
+def launch(name, resume=False):
     ws = output / name
-    ws.mkdir()
+    ws.mkdir(exist_ok=resume)
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
@@ -156,184 +156,207 @@ def waitfor(fn, label):
     raise AssertionError(label)
 
 
-try:
-    a, b = launch("a"), launch("b")
-    cloud = "review" + secrets.token_hex(3)
-    for d in (a, b):
-        call(d, "/api/setting/getCloudUser")
-        call(d, "/api/sync/setSyncEnable", {"enabled": False})
+if __name__ == "__main__":
+    try:
+        a, b = launch("a"), launch("b")
+        cloud = "review" + secrets.token_hex(3)
+        for d in (a, b):
+            call(d, "/api/setting/getCloudUser")
+            call(d, "/api/sync/setSyncEnable", {"enabled": False})
+            call(
+                d,
+                "/api/repo/initRepoKeyFromPassphrase",
+                {"pass": "isolated artifact validation passphrase"},
+            )
+            call(
+                d,
+                "/api/sync/setSyncProviderSFTP",
+                {"sftp": dict(sftp, path="")},
+                expect=None,
+            )
+            assert events[-1]["code"] != 0, "empty SFTP path was accepted"
+            call(d, "/api/sync/setSyncProviderSFTP", {"sftp": sftp})
+            config = call(d, "/api/system/getConf")["conf"]["sync"]["sftp"]
+            for field in ("host", "port", "username", "path", "hostKey"):
+                assert config[field] == sftp[field], (
+                    "saved SFTP config missing from UI response: " + field
+                )
+            call(d, "/api/sync/setSyncProvider", {"provider": 5})
+            call(d, "/api/sync/setSyncMode", {"mode": 2})
+        call(a, "/api/sync/createCloudSyncDir", {"name": cloud})
+        for d in (a, b):
+            call(d, "/api/sync/setCloudSyncDir", {"name": cloud})
+            call(d, "/api/sync/setSyncEnable", {"enabled": True})
+        notebook = call(
+            a, "/api/notebook/createNotebook", {"name": "SFTP artifact validation"}
+        )
+        notebook = (
+            notebook["notebook"]["id"] if "notebook" in notebook else notebook["id"]
+        )
+        doc = call(
+            a,
+            "/api/filetree/createDocWithMd",
+            {
+                "notebook": notebook,
+                "path": "/SFTP verification",
+                "markdown": "artifact-original-A",
+            },
+        )
+        time.sleep(1)
+        call(a, "/api/sync/performSync")
+        call(b, "/api/sync/performSync")
+        docpath = Path("data") / notebook / (doc + ".sy")
+        waitfor(lambda: (b["ws"] / docpath).exists(), "A document missing on B")
+        assert "artifact-original-A" in (b["ws"] / docpath).read_text(encoding="utf-8")
+        # Sync writes files before its asynchronous application index is ready.
+        waitfor(
+            lambda: call(b, "/api/block/getBlockInfo", {"id": doc}, expect=None)
+            is not None,
+            "synced document never became available in B's block index",
+        )
         call(
-            d,
+            b,
+            "/api/block/appendBlock",
+            {"parentID": doc, "dataType": "markdown", "data": "artifact-update-B"},
+        )
+        time.sleep(1)
+        call(b, "/api/sync/performSync")
+        call(a, "/api/sync/performSync")
+        waitfor(
+            lambda: "artifact-update-B"
+            in (a["ws"] / docpath).read_text(encoding="utf-8"),
+            "B edit missing on A",
+        )
+        assert json.loads(
+            (a["ws"] / docpath).read_text(encoding="utf-8")
+        ) == json.loads((b["ws"] / docpath).read_text(encoding="utf-8"))
+        if args.asset_mib:
+            asset = Path("data/assets/sftp-validation.bin")
+            payload = os.urandom(args.asset_mib * 1024 * 1024)
+            (a["ws"] / asset).parent.mkdir(parents=True, exist_ok=True)
+            (a["ws"] / asset).write_bytes(payload)
+            call(a, "/api/sync/performSync")
+            call(b, "/api/sync/performSync")
+            assert (
+                b["ws"] / asset
+            ).read_bytes() == payload, "binary asset differs on B"
+            report["asset"] = {
+                "bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        call(a, "/api/repo/createSnapshot", {"memo": "artifact SFTP backup"})
+        snapshots = call(a, "/api/repo/getRepoSnapshots", {"page": 1})
+        snapshot = snapshots["snapshots"][0]["id"]
+        call(a, "/api/repo/tagSnapshot", {"id": snapshot, "name": "artifact-check"})
+        call(
+            a,
+            "/api/repo/uploadCloudSnapshot",
+            {"id": snapshot, "tag": "artifact-check"},
+        )
+        call(
+            b,
+            "/api/repo/downloadCloudSnapshot",
+            {"id": snapshot, "tag": "artifact-check"},
+        )
+        call(
+            a,
+            "/api/filetree/removeDoc",
+            {"notebook": notebook, "path": "/" + doc + ".sy"},
+        )
+        call(a, "/api/sync/performSync")
+        call(b, "/api/sync/performSync")
+        waitfor(lambda: not (b["ws"] / docpath).exists(), "deletion missing on B")
+        call(a, "/api/repo/purgeCloudRepo")
+        call(
+            b,
+            "/api/repo/downloadCloudSnapshot",
+            {"id": snapshot, "tag": "artifact-check"},
+        )
+        c = launch("c")
+        call(c, "/api/setting/getCloudUser")
+        call(c, "/api/sync/setSyncEnable", {"enabled": False})
+        call(
+            c,
             "/api/repo/initRepoKeyFromPassphrase",
             {"pass": "isolated artifact validation passphrase"},
         )
-        call(
-            d,
-            "/api/sync/setSyncProviderSFTP",
-            {"sftp": dict(sftp, path="")},
-            expect=None,
-        )
-        assert events[-1]["code"] != 0, "empty SFTP path was accepted"
-        call(d, "/api/sync/setSyncProviderSFTP", {"sftp": sftp})
-        config = call(d, "/api/system/getConf")["conf"]["sync"]["sftp"]
-        for field in ("host", "port", "username", "path", "hostKey"):
-            assert config[field] == sftp[field], (
-                "saved SFTP config missing from UI response: " + field
-            )
-        call(d, "/api/sync/setSyncProvider", {"provider": 5})
-        call(d, "/api/sync/setSyncMode", {"mode": 2})
-    call(a, "/api/sync/createCloudSyncDir", {"name": cloud})
-    for d in (a, b):
-        call(d, "/api/sync/setCloudSyncDir", {"name": cloud})
-        call(d, "/api/sync/setSyncEnable", {"enabled": True})
-    notebook = call(
-        a, "/api/notebook/createNotebook", {"name": "SFTP artifact validation"}
-    )
-    notebook = notebook["notebook"]["id"] if "notebook" in notebook else notebook["id"]
-    doc = call(
-        a,
-        "/api/filetree/createDocWithMd",
-        {
-            "notebook": notebook,
-            "path": "/SFTP verification",
-            "markdown": "artifact-original-A",
-        },
-    )
-    time.sleep(1)
-    call(a, "/api/sync/performSync")
-    call(b, "/api/sync/performSync")
-    docpath = Path("data") / notebook / (doc + ".sy")
-    waitfor(lambda: (b["ws"] / docpath).exists(), "A document missing on B")
-    assert "artifact-original-A" in (b["ws"] / docpath).read_text(encoding="utf-8")
-    # Sync writes files before its asynchronous application index is ready.
-    waitfor(
-        lambda: call(b, "/api/block/getBlockInfo", {"id": doc}, expect=None)
-        is not None,
-        "synced document never became available in B's block index",
-    )
-    call(
-        b,
-        "/api/block/appendBlock",
-        {"parentID": doc, "dataType": "markdown", "data": "artifact-update-B"},
-    )
-    time.sleep(1)
-    call(b, "/api/sync/performSync")
-    call(a, "/api/sync/performSync")
-    waitfor(
-        lambda: "artifact-update-B" in (a["ws"] / docpath).read_text(encoding="utf-8"),
-        "B edit missing on A",
-    )
-    assert json.loads((a["ws"] / docpath).read_text(encoding="utf-8")) == json.loads(
-        (b["ws"] / docpath).read_text(encoding="utf-8")
-    )
-    if args.asset_mib:
-        asset = Path("data/assets/sftp-validation.bin")
-        payload = os.urandom(args.asset_mib * 1024 * 1024)
-        (a["ws"] / asset).parent.mkdir(parents=True, exist_ok=True)
-        (a["ws"] / asset).write_bytes(payload)
-        call(a, "/api/sync/performSync")
-        call(b, "/api/sync/performSync")
-        assert (b["ws"] / asset).read_bytes() == payload, "binary asset differs on B"
-        report["asset"] = {
-            "bytes": len(payload),
-            "sha256": hashlib.sha256(payload).hexdigest(),
-        }
-    call(a, "/api/repo/createSnapshot", {"memo": "artifact SFTP backup"})
-    snapshots = call(a, "/api/repo/getRepoSnapshots", {"page": 1})
-    snapshot = snapshots["snapshots"][0]["id"]
-    call(a, "/api/repo/tagSnapshot", {"id": snapshot, "name": "artifact-check"})
-    call(a, "/api/repo/uploadCloudSnapshot", {"id": snapshot, "tag": "artifact-check"})
-    call(
-        b, "/api/repo/downloadCloudSnapshot", {"id": snapshot, "tag": "artifact-check"}
-    )
-    call(
-        a, "/api/filetree/removeDoc", {"notebook": notebook, "path": "/" + doc + ".sy"}
-    )
-    call(a, "/api/sync/performSync")
-    call(b, "/api/sync/performSync")
-    waitfor(lambda: not (b["ws"] / docpath).exists(), "deletion missing on B")
-    call(a, "/api/repo/purgeCloudRepo")
-    call(
-        b, "/api/repo/downloadCloudSnapshot", {"id": snapshot, "tag": "artifact-check"}
-    )
-    c = launch("c")
-    call(c, "/api/setting/getCloudUser")
-    call(c, "/api/sync/setSyncEnable", {"enabled": False})
-    call(
-        c,
-        "/api/repo/initRepoKeyFromPassphrase",
-        {"pass": "isolated artifact validation passphrase"},
-    )
-    call(c, "/api/sync/setSyncProviderSFTP", {"sftp": sftp})
-    call(c, "/api/sync/setSyncProvider", {"provider": 5})
-    call(c, "/api/sync/setCloudSyncDir", {"name": cloud})
-    assert not (c["ws"] / docpath).exists()
-    call(
-        c, "/api/repo/downloadCloudSnapshot", {"id": snapshot, "tag": "artifact-check"}
-    )
-    call(c, "/api/repo/checkoutRepo", {"id": snapshot})
-    waitfor(
-        lambda: (c["ws"] / docpath).exists(), "empty workspace restore missing document"
-    )
-    restored = (c["ws"] / docpath).read_text(encoding="utf-8")
-    assert "artifact-original-A" in restored and "artifact-update-B" in restored
-    if args.asset_mib:
-        assert (
-            c["ws"] / asset
-        ).read_bytes() == payload, "binary asset differs after fresh restore"
-    if args.image:
-        before = (c["ws"] / docpath).read_bytes()
-        subprocess.run(["docker", "restart", c["container"]], check=True, timeout=60)
-        ready(c)
-        assert (
-            c["ws"] / docpath
-        ).read_bytes() == before, "workspace changed after container restart"
+        call(c, "/api/sync/setSyncProviderSFTP", {"sftp": sftp})
+        call(c, "/api/sync/setSyncProvider", {"provider": 5})
+        call(c, "/api/sync/setCloudSyncDir", {"name": cloud})
+        assert not (c["ws"] / docpath).exists()
         call(
             c,
             "/api/repo/downloadCloudSnapshot",
             {"id": snapshot, "tag": "artifact-check"},
         )
-    report.update(
-        status="passed",
-        cloud=cloud,
-        document=doc,
-        snapshot=snapshot,
-        checks=[
-            "reject empty SFTP path",
-            "saved SFTP settings returned by application configuration API",
-            "A to B document sync",
-            "B to A edit sync",
-            "equal document JSON",
-            "tag backup upload/download",
-            "deletion propagation",
-            "tag download after cloud purge",
-            "restore into fresh third workspace after purge",
-        ],
-    )
-    if args.asset_mib:
-        report["checks"].append(
-            "random binary asset synchronized and restored byte-for-byte"
+        call(c, "/api/repo/checkoutRepo", {"id": snapshot})
+        waitfor(
+            lambda: (c["ws"] / docpath).exists(),
+            "empty workspace restore missing document",
         )
-    if args.image:
-        report["checks"].append(
-            "container restart preserves restored document and SFTP access"
+        restored = (c["ws"] / docpath).read_text(encoding="utf-8")
+        assert "artifact-original-A" in restored and "artifact-update-B" in restored
+        if args.asset_mib:
+            assert (
+                c["ws"] / asset
+            ).read_bytes() == payload, "binary asset differs after fresh restore"
+        if args.image:
+            before = (c["ws"] / docpath).read_bytes()
+            subprocess.run(
+                ["docker", "restart", c["container"]], check=True, timeout=60
+            )
+            ready(c)
+            assert (
+                c["ws"] / docpath
+            ).read_bytes() == before, "workspace changed after container restart"
+            call(
+                c,
+                "/api/repo/downloadCloudSnapshot",
+                {"id": snapshot, "tag": "artifact-check"},
+            )
+        report.update(
+            status="passed",
+            cloud=cloud,
+            document=doc,
+            snapshot=snapshot,
+            checks=[
+                "reject empty SFTP path",
+                "saved SFTP settings returned by application configuration API",
+                "A to B document sync",
+                "B to A edit sync",
+                "equal document JSON",
+                "tag backup upload/download",
+                "deletion propagation",
+                "tag download after cloud purge",
+                "restore into fresh third workspace after purge",
+            ],
         )
-except BaseException as e:
-    report.update(status="failed", error=str(e))
-    raise
-finally:
-    for container in containers:
-        subprocess.run(
-            ["docker", "rm", "-f", container], check=False, stdout=subprocess.DEVNULL
-        )
-    for proc, log in processes:
-        proc.terminate()
-    for proc, log in processes:
-        try:
-            proc.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        log.close()
-    (output / "report.json").write_text(json.dumps(report, indent=2))
-    print(json.dumps({k: v for k, v in report.items() if k != "events"}, indent=2))
+        if args.asset_mib:
+            report["checks"].append(
+                "random binary asset synchronized and restored byte-for-byte"
+            )
+        if args.image:
+            report["checks"].append(
+                "container restart preserves restored document and SFTP access"
+            )
+    except BaseException as e:
+        report.update(status="failed", error=str(e))
+        raise
+    finally:
+        for container in containers:
+            subprocess.run(
+                ["docker", "rm", "-f", container],
+                check=False,
+                stdout=subprocess.DEVNULL,
+            )
+        for proc, log in processes:
+            proc.terminate()
+        for proc, log in processes:
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            log.close()
+        (output / "report.json").write_text(json.dumps(report, indent=2))
+        print(json.dumps({k: v for k, v in report.items() if k != "events"}, indent=2))

@@ -5,6 +5,10 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
+      crossPlatform:
+        description: Use the temporary shared SFTP service from SFTP_CROSS_PLATFORM_HANDOFF
+        type: boolean
+        default: false
       buildRun:
         description: Review build containing desktop-win.exe
         type: string
@@ -56,6 +60,7 @@ jobs:
           "SFTP_RESOURCES=$($kernel[0].Directory.Parent.FullName)" >> $env:GITHUB_ENV
           @{source_revision=$env:REVISION; build_run=$env:BUILD_RUN; installer_sha256=(Get-FileHash $installer[0].FullName -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/package-provenance.json"
       - name: Run packaged Windows kernel against independent SFTP server
+        if: inputs.crossPlatform != true
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -72,6 +77,30 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Windows SFTP validation failed' }
           } finally {
             Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
+          }
+      - name: Exchange document with macOS through the shared SFTP server
+        if: inputs.crossPlatform == true
+        env:
+          HANDOFF: ${{ secrets.SFTP_CROSS_PLATFORM_HANDOFF }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $config = $env:HANDOFF | ConvertFrom-Json
+          if ($config.hostname -notmatch '^[a-z0-9-]+\.trycloudflare\.com$') { throw 'Invalid test relay hostname' }
+          Invoke-WebRequest 'https://github.com/cloudflare/cloudflared/releases/download/2026.1.1/cloudflared-windows-amd64.exe' -OutFile "$env:RUNNER_TEMP/cloudflared.exe"
+          $relay = Start-Process "$env:RUNNER_TEMP/cloudflared.exe" -ArgumentList @('access','tcp','--hostname',$config.hostname,'--url','127.0.0.1:50262') -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP/relay.log" -RedirectStandardError "$env:RUNNER_TEMP/relay-error.log"
+          try {
+            $config.sftp.host = '127.0.0.1'
+            $config.sftp.port = 50262
+            $config.sftp.timeout = 300
+            $config.sftp | ConvertTo-Json | Set-Content -Encoding utf8 "$env:RUNNER_TEMP/cross-sftp.json"
+            $config.handoff | ConvertTo-Json | Set-Content -Encoding utf8 "$env:RUNNER_TEMP/cross-handoff.json"
+            Start-Sleep -Seconds 3
+            python scripts/validation/verify_sftp_cross_platform.py peer --kernel "$env:SFTP_KERNEL" --resources "$env:SFTP_RESOURCES" --sftp-config "$env:RUNNER_TEMP/cross-sftp.json" --output "$env:RUNNER_TEMP/sftp-windows-validation" --handoff "$env:RUNNER_TEMP/cross-handoff.json"
+            if ($LASTEXITCODE -ne 0) { throw 'Cross-platform validation failed' }
+          } finally {
+            Stop-Process -Id $relay.Id -ErrorAction SilentlyContinue
+            Remove-Item "$env:RUNNER_TEMP/cross-sftp.json" -ErrorAction SilentlyContinue
           }
       - uses: actions/upload-artifact@v4
         if: always()
