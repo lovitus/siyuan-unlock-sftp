@@ -175,6 +175,11 @@ try:
         )
         assert events[-1]["code"] != 0, "empty SFTP path was accepted"
         call(d, "/api/sync/setSyncProviderSFTP", {"sftp": sftp})
+        config = call(d, "/api/system/getConf")["conf"]["sync"]["sftp"]
+        for field in ("host", "port", "username", "path", "hostKey"):
+            assert config[field] == sftp[field], (
+                "saved SFTP config missing from UI response: " + field
+            )
         call(d, "/api/sync/setSyncProvider", {"provider": 5})
         call(d, "/api/sync/setSyncMode", {"mode": 2})
     call(a, "/api/sync/createCloudSyncDir", {"name": cloud})
@@ -295,6 +300,7 @@ try:
         snapshot=snapshot,
         checks=[
             "reject empty SFTP path",
+            "saved SFTP settings returned by application configuration API",
             "A to B document sync",
             "B to A edit sync",
             "equal document JSON",
