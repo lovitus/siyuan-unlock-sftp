@@ -2,6 +2,7 @@ import importlib.util
 import os
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -54,17 +55,19 @@ class ReleaseTrackingTest(unittest.TestCase):
         self.assertIn('--draft', args)
         self.assertIn('example/siyuan', args)
 
-    def test_unsupported_new_version_waits_without_creating_release(self):
+    def test_new_unlisted_version_starts_build(self):
         output, mutations, calls = self.run_check(error=404, tag='v9.9.9')
-        self.assertIn('pending=false', output)
-        self.assertIn('compatibility_pending=true', output)
-        self.assertFalse(mutations)
-        self.assertFalse(any('/contents/' in path for path in calls))
+        self.assertIn('pending=true', output)
+        self.assertEqual(len(mutations), 1)
+        self.assertEqual(mutations[0].args[0][2], 'create')
+        self.assertIn('v9.9.9', mutations[0].args[0])
+        self.assertIn('repos/siyuan-note/siyuan/contents/app/package.json?ref=v9.9.9', calls)
 
-    def test_unsupported_draft_does_not_repeat_failed_build(self):
+    def test_new_unlisted_draft_is_retried(self):
         output, mutations, _ = self.run_check({'draft': True}, tag='v9.9.9')
-        self.assertIn('compatibility_pending=true', output)
-        self.assertFalse(mutations)
+        self.assertIn('pending=true', output)
+        self.assertEqual(mutations[0].args[0][2], 'edit')
+        self.assertIn('v9.9.9', mutations[0].args[0])
 
     def test_validated_v384_starts_build(self):
         output, mutations, calls = self.run_check(error=404, tag='v3.8.4')
@@ -98,6 +101,59 @@ class ReleaseTrackingTest(unittest.TestCase):
             self.run_check(tag='v3.8.3;echo bad')
         with self.assertRaises(ValueError):
             self.run_check(manager='pnpm@11;echo bad')
+
+
+class SourcePreparationTest(unittest.TestCase):
+    def prepare(self, version, mode='desktop', fail_patch=False):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_git = root / 'git'
+            fake_git.write_text("""#!/bin/sh
+printf '%s\n' "$*" >> "$GIT_TEST_LOG"
+if [ "$1" = clone ]; then
+    for destination do :; done
+    mkdir -p "$destination/kernel"
+elif [ "$1" = apply ] && [ "$FAIL_PATCH" = 1 ]; then
+    exit 1
+fi
+""")
+            fake_git.chmod(0o755)
+            log = root / 'git.log'
+            destination = root / 'source'
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
+                       GIT_TEST_LOG=str(log), FAIL_PATCH=str(int(fail_patch)))
+            result = subprocess.run([
+                'bash', str(Path(__file__).with_name('prepare-sftp-source.sh').resolve()),
+                version, str(destination), mode,
+            ], env=env, capture_output=True, text=True)
+            return result, log.read_text(), (destination / 'kernel/sftpcloud').exists()
+
+    def test_future_versions_use_current_patch(self):
+        for version in ['v3.8.4', 'v3.8.5', 'v4.0.0']:
+            for mode in ['desktop', 'docker']:
+                with self.subTest(version=version, mode=mode):
+                    result, log, overlay = self.prepare(version, mode)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('source-v3.8.4.patch', log)
+                    self.assertNotIn('hide-account-entry.patch', log)
+                    self.assertTrue(overlay)
+
+    def test_historical_version_keeps_its_patch_set(self):
+        result, log, overlay = self.prepare('v3.8.3')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('account-v3.8.3.patch', log)
+        self.assertIn('provider.patch', log)
+        self.assertNotIn('source-v3.8.4.patch', log)
+        self.assertTrue(overlay)
+
+    def test_patch_failure_stops_source_preparation(self):
+        for mode in ['desktop', 'docker']:
+            with self.subTest(mode=mode):
+                result, log, overlay = self.prepare('v3.8.5', mode, fail_patch=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(overlay)
+                self.assertNotIn('diff --check', log)
+                self.assertNotIn('docker-command.patch', log)
 
 
 if __name__ == '__main__':

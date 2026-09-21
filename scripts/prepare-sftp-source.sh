@@ -6,21 +6,16 @@ patch_root="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
 git clone --branch "$version" --depth=1 https://github.com/siyuan-note/siyuan.git "$source_dir"
 cd "$source_dir"
-if [[ "$version" == v3.8.4 ]]; then
- git apply "$patch_root/patches/sftp/source-v3.8.4.patch"
-else
-for patch in disable-update default-config mock-vip-user; do
- git apply "$patch_root/patches/siyuan/$patch.patch"
-done
+# Keep the historical patch set only for v3.8.3. Try the current patch set
+# on every newer release; git apply failures stop preflight before builds.
 if [[ "$version" == v3.8.3 ]]; then
+ for patch in disable-update default-config mock-vip-user; do
+  git apply "$patch_root/patches/siyuan/$patch.patch"
+ done
  git apply "$patch_root/patches/siyuan/account-v3.8.3.patch"
+ git apply "$patch_root/patches/sftp/provider.patch"
 else
- git apply "$patch_root/patches/siyuan/hide-account-entry.patch"
-fi
-if [[ "$version" != v3.8.3 && "${3:-desktop}" != docker ]]; then
- git apply "$patch_root/patches/siyuan/first-launch-notice.patch"
-fi
-git apply "$patch_root/patches/sftp/provider.patch"
+ git apply "$patch_root/patches/sftp/source-v3.8.4.patch"
 fi
 if [[ "${3:-desktop}" == docker ]]; then
  # The entrypoint already invokes /opt/siyuan/kernel; CMD contains only its args.

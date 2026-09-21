@@ -195,28 +195,21 @@ mobile applications still need separate validation.
 
 ## Review builds
 
-### Scheduled release compatibility gate
+### Scheduled release patch checks
 
-Scheduled checks still track the latest stable `appdev/siyuan-unlock` release.
-Only versions listed in `patches/sftp/supported-releases.json` may start an
-automatic release build. An unvalidated version is reported in the Actions job
-summary as waiting for patch compatibility; it is neither built nor published.
-Existing drafts are left untouched. This avoids repeatedly attempting the same
-known-incompatible patch across every platform on each six-hour check.
+Every six hours, the workflow checks the latest stable `appdev/siyuan-unlock`
+release. Every unpublished version automatically proceeds to patch preparation;
+there is no version allowlist. The current patch set is used by default, with
+an explicit historical patch set retained for `v3.8.3`.
 
-Before adding a version to that list, adapt and validate its patches, run the
-SFTP integration tests, and verify review builds. Supported pending versions
-also run desktop/container source preparation in a single preflight job before
-the platform matrix starts. Failures in these supported builds remain failures.
+Desktop and container source preparation must both pass the preflight job
+before platform builds start. Patch conflicts fail preflight and require a
+compatibility fix; the platform matrix is skipped. Failed runs retain a draft
+for retry. All platform builds must succeed before publishing the release and
+promoting the container image to `latest`. Published versions are skipped.
 
-On 2026-09-19 (Asia/Singapore), upstream `v3.8.4` exposed incompatible account,
-API, and SFTP patch contexts, starting seven consecutive scheduled failures.
-`v3.8.4` patch adaptation is complete, with desktop package runtime checks and
-live macOS/Windows SFTP exchange passing. Its full review build and both container runtime profiles have passed;
-`v3.8.4` is now eligible for automatic release builds.
-See [v3.8.4 validation evidence](validation/2026-09-20/README.md).
-The compatibility gate stops redundant builds, not the upstream schedule or
-the user's notification settings.
+`v3.8.4` patch adaptation and runtime validation are recorded in the
+[v3.8.4 validation evidence](validation/2026-09-20/README.md).
 
 The **Build and verify SFTP review** workflow builds the existing desktop,
 Android, iOS and container matrices from an explicit official version. It stores
