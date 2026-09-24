@@ -200,7 +200,8 @@ mobile applications still need separate validation.
 Every six hours, the workflow checks the latest stable `appdev/siyuan-unlock`
 release. Every unpublished version automatically proceeds to patch preparation;
 there is no version allowlist. The current patch set is used by default, with
-an explicit historical patch set retained for `v3.8.3`.
+historical patch sets retained for `v3.8.3` and `v3.8.4`. The default patch
+set follows the `v3.8.5` sync settings layout and is attempted on future versions.
 
 Desktop and container source preparation must both pass the preflight job
 before platform builds start. Patch conflicts fail preflight and require a

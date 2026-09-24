@@ -134,7 +134,7 @@ fi
                 with self.subTest(version=version, mode=mode):
                     result, log, overlay = self.prepare(version, mode)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertIn('source-v3.8.4.patch', log)
+                    self.assertIn('source-v3.8.4.patch' if version == 'v3.8.4' else 'source-v3.8.5.patch', log)
                     self.assertNotIn('hide-account-entry.patch', log)
                     self.assertTrue(overlay)
 
