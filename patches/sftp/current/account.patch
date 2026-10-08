@@ -1,0 +1,25 @@
+diff --git a/kernel/model/cloud_account_auth.go b/kernel/model/cloud_account_auth.go
+index 8c5330c..0d2dbaa 100644
+--- a/kernel/model/cloud_account_auth.go
++++ b/kernel/model/cloud_account_auth.go
+@@ -19,7 +19,7 @@ func cloudAccountAuthFailureHandler(token string) func() {
+ 	}
+ 	server := util.GetCloudServer()
+ 	requestedUser := Conf.GetUser()
+-	if requestedUser == nil {
++	if requestedUser == nil || (requestedUser.UserId == "0" && requestedUser.UserToken == "token") {
+ 		return func() {}
+ 	}
+ 	return func() {
+diff --git a/kernel/model/cloud_service.go b/kernel/model/cloud_service.go
+index b236e60..96ad7ee 100644
+--- a/kernel/model/cloud_service.go
++++ b/kernel/model/cloud_service.go
+@@ -270,7 +270,6 @@ var (
+ 
+ func RefreshCheckJob2H() {
+ 	go refreshSubscriptionExpirationRemind()
+-	go refreshUser()
+ 	go refreshAnnouncement()
+ }
+ 

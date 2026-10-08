@@ -4,18 +4,8 @@ import json
 import os
 import re
 import subprocess
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
-
-
-def api(path):
-    request = Request('https://api.github.com/' + path, headers={
-        'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-    })
-    with urlopen(request, timeout=30) as response:
-        return json.load(response)
+from pathlib import Path
+from release_state import api, find_release, fingerprint, failed_before
 
 
 def main():
@@ -26,25 +16,28 @@ def main():
         raise ValueError('Unsupported upstream release tag: ' + tag)
     if upstream['draft'] or upstream['prerelease']:
         raise ValueError('Expected a published stable release')
-    try:
-        release = api(f'repos/{repo}/releases/tags/{tag}')
-    except HTTPError as error:
-        if error.code != 404:
-            raise
-        # The tag endpoint can return 404 for an unpublished draft. Search the
-        # authenticated release listing before deciding to create a new one.
-        matches = []
-        page = 1
-        while True:
-            releases = api(f'repos/{repo}/releases?per_page=100&page={page}')
-            matches.extend(item for item in releases if item['tag_name'] == tag)
-            if len(releases) < 100:
-                break
-            page += 1
-        if len(matches) > 1:
-            raise ValueError(f'Multiple releases exist for {tag}; reconcile duplicate drafts before building')
-        release = matches[0] if matches else None
-    pending = release is None or release['draft']
+    release = find_release(repo, tag, request=api)
+    if release and not release['draft']:
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write(f'pending=false\nversion={tag}\n')
+        print(f'{tag} is already published; nothing to do.')
+        return
+    source_sha = api(f'repos/siyuan-note/siyuan/commits/{tag}')['sha']
+    if not re.fullmatch(r'[a-f0-9]{40}', source_sha):
+        raise ValueError('Invalid upstream source commit')
+    key = fingerprint(tag, source_sha)
+    manual_retry = (os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' or
+                    int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')) > 1)
+    if failed_before(release, key) and not manual_retry:
+        message = (f'{tag}: unchanged known patch conflict; build skipped. '
+                   'No release was published. Update patches or use Run workflow to retry.\n\n'
+                   + (release.get('body') or ''))
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write(f'pending=false\nversion={tag}\npatch_blocked=true\n')
+        print(message)
+        if os.environ.get('GITHUB_STEP_SUMMARY'):
+            Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(message)
+        return
     package = api(f'repos/siyuan-note/siyuan/contents/app/package.json?ref={tag}')
     import base64
     package = json.loads(base64.b64decode(package['content']))
@@ -52,10 +45,7 @@ def main():
     if not re.fullmatch(r'pnpm@\d+\.\d+\.\d+(?:\+sha\d+\.[a-fA-F0-9]+)?', manager):
         raise ValueError('Unexpected package manager: ' + manager)
     with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-        output.write(f'pending={str(pending).lower()}\nversion={tag}\npackage_manager={manager}\n')
-    if not pending:
-        print(f'{tag} is already published; nothing to do.')
-        return
+        output.write(f'pending=true\nversion={tag}\npackage_manager={manager}\nsource_sha={source_sha}\npatch_fingerprint={key}\n')
     if release is None:
         subprocess.run(['gh', 'release', 'create', tag, '--repo', repo,
                         '--target', os.environ['GITHUB_SHA'], '--draft', '--title', f'SiYuan SFTP {tag}',

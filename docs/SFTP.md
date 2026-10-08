@@ -198,19 +198,36 @@ mobile applications still need separate validation.
 ### Scheduled release patch checks
 
 Every six hours, the workflow checks the latest stable `appdev/siyuan-unlock`
-release. Every unpublished version automatically proceeds to patch preparation;
-there is no version allowlist. The current patch set is used by default, with
-historical patch sets retained for `v3.8.3` and `v3.8.4`. The default patch
-set follows the `v3.8.5` sync settings layout and is attempted on future versions.
+release. Every unpublished version automatically attempts patch preparation;
+there is no version allowlist. Historical patch sets remain for `v3.8.3` and
+`v3.8.4`. Newer versions use the components under `patches/sftp/current/`.
 
-Desktop and container source preparation must both pass the preflight job
-before platform builds start. Patch conflicts fail preflight and require a
-compatibility fix; the platform matrix is skipped. Failed runs retain a draft
-for retry. All platform builds must succeed before publishing the release and
-promoting the container image to `latest`. Published versions are skipped.
+The cloud-user implementation lives in `overlays/kernel/api/sftp_account.go`.
+A standard-library Go AST transform replaces only the body of the registered
+handler. It validates the API contract and signature, preserves the authorization
+callback, and refuses missing, ambiguous or changed contracts. Upstream changes
+inside that body no longer require copying a new version-specific text patch.
+Other source changes still use checked text patches; structural changes can
+still require compatibility work.
 
-`v3.8.4` patch adaptation and runtime validation are recorded in the
-[v3.8.4 validation evidence](validation/2026-09-20/README.md).
+Desktop and container preparation must pass before platform builds start.
+A deterministic patch conflict (exit 42) fails the first run and records a
+fingerprint and original failure URL in the unpublished release notes. The
+fingerprint includes the version, official source commit, patches, overlays,
+scripts and workflows. Unchanged scheduled attempts report **patch blocked** in
+the Actions summary and skip all builds; they do not publish a release or claim
+compatibility passed. The record persists in the draft rather than an expiring
+Actions cache. Do not remove its HTML marker unless intentionally resetting it.
+
+New versions, changed source commits or changed patch/build inputs automatically
+retry. **Run workflow** and **Re-run jobs** also retry unchanged inputs. Successful
+preflight removes the failure record. Clone/network errors, missing tools and
+later compilation or packaging failures are not suppressed as patch conflicts.
+If persisting the failure record itself fails, the workflow remains failed and
+subsequent checks retry rather than silently discarding the error.
+
+All platform builds must succeed before publishing the release and promoting
+the container image to `latest`. Published versions are skipped.
 
 The **Build and verify SFTP review** workflow builds the existing desktop,
 Android, iOS and container matrices from an explicit official version. It stores

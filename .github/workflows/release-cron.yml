@@ -28,10 +28,15 @@ jobs:
       pending: ${{ steps.release.outputs.pending }}
       version: ${{ steps.release.outputs.version }}
       package_manager: ${{ steps.release.outputs.package_manager }}
+      source_sha: ${{ steps.release.outputs.source_sha }}
+      patch_fingerprint: ${{ steps.release.outputs.patch_fingerprint }}
     steps:
       - uses: actions/checkout@v4
       - name: Test release detection
-        run: python3 scripts/test-release-tracking.py
+        run: |
+          python3 scripts/test-release-tracking.py
+          python3 scripts/test-release-state.py
+          GO111MODULE=off go test ./patches/sftp/transforms
       - name: Check upstream published release
         id: release
         env:
@@ -47,9 +52,10 @@ jobs:
       - name: Verify source patches before starting platform builds
         env:
           VERSION: ${{ needs.check.outputs.version }}
-        run: |
-          bash scripts/prepare-sftp-source.sh "$VERSION" "$RUNNER_TEMP/sftp-desktop" desktop
-          bash scripts/prepare-sftp-source.sh "$VERSION" "$RUNNER_TEMP/sftp-docker" docker
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ needs.check.outputs.source_sha }}
+          PATCH_FINGERPRINT: ${{ needs.check.outputs.patch_fingerprint }}
+        run: python3 scripts/release-preflight.py
 
   desktop:
     needs: [check, preflight]

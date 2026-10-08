@@ -34,7 +34,9 @@ SFTP 适配层实现存储接口，不维护另一套同步算法。
 GitHub Actions 每 6 小时检查一次上游稳定 release，也支持手动运行
 [Track upstream releases](https://github.com/lovitus/siyuan-unlock-sftp/actions/workflows/release-cron.yml)。
 所有新稳定版本都会自动尝试应用当前补丁，无需加入版本白名单。
-先检查桌面端和容器补丁；patch 失败时停止后续构建，等待人工修复兼容性。
+先检查桌面端和容器补丁；首次 patch 冲突会失败并在 release 草稿中保存故障及原始日志链接。
+相同上游源码和补丁的后续定时检查跳过重复失败；新版本、源码或补丁变化会自动重试，
+也可通过 **Run workflow** 或 **Re-run jobs** 手动重试。网络、工具链和后续构建错误不计为已知 patch 冲突。
 打补丁并构建成功后，在 `lovitus/siyuan-unlock-sftp` 发布 release；失败保留草稿以便重试。
 已发布版本跳过，不会因修改补丁而自动覆盖。无需本地定时器。
 
@@ -52,7 +54,9 @@ Android 签名使用仓库 secrets `KEYSTORE` 和 `KEYSTORE_PASSWORD`。
 
 需要 Git、Bash 和对应上游版本要求的 Go；前端验证另需 Node.js 和 pnpm。
 Go、前端依赖及版本由拉取源码中的清单管理；SFTP 新增依赖通过
-`patches/sftp/provider.patch` 修改 `kernel/go.mod` 和 `kernel/go.sum`。
+`patches/sftp/current/dependencies.patch` 修改 `kernel/go.mod` 和 `kernel/go.sum`。
+当前补丁按账户、界面、依赖、更新和 SFTP 接入拆分到 `patches/sftp/current/`；
+账户处理由 Go 语法树变换定位，具体实现保存在 `overlays/kernel/api/`。
 
 ```sh
 bash scripts/prepare-sftp-source.sh v3.8.3 /tmp/siyuan-sftp-build
@@ -65,6 +69,8 @@ go build -tags 'fts5 sqlcipher' .
 
 ```sh
 python3 scripts/test-release-tracking.py
+python3 scripts/test-release-state.py
+GO111MODULE=off go test ./patches/sftp/transforms
 actionlint
 ```
 
