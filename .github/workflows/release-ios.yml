@@ -54,6 +54,12 @@ jobs:
         with:
           path: siyuan-note
 
+      - name: Set up Go for source transforms
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
       - name: clone origin and apply patches
         env:
           RELEASE_VERSION: ${{ inputs.version }}

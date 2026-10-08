@@ -76,22 +76,25 @@ func rewrite(src []byte) ([]byte, error) {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: apply-account setting.go")
+	if len(os.Args) != 3 {
+		fmt.Fprintln(os.Stderr, "usage: apply-source setting.go repository.go")
 		os.Exit(2)
 	}
-	src, err := os.ReadFile(os.Args[1])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	out, err := rewrite(src)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "PATCH_CONFLICT:", err)
-		os.Exit(42)
-	}
-	if err := os.WriteFile(os.Args[1], out, 0644); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	for i, transform := range []func([]byte) ([]byte, error){rewrite, rewriteBackup} {
+		path := os.Args[i+1]
+		src, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		out, err := transform(src)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "PATCH_CONFLICT:", err)
+			os.Exit(42)
+		}
+		if err := os.WriteFile(path, out, 0644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 }

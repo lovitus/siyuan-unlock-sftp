@@ -28,6 +28,11 @@ jobs:
         version: [v3.8.3, v3.8.4, v3.8.5, v3.8.6]
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Go for source transforms
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
       - name: Apply patches to supported SiYuan release
         env:
           VERSION: ${{ matrix.version }}

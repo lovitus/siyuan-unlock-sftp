@@ -230,16 +230,6 @@ index 34117d0..bc6d5cb 100644
  		if !IsPaidUser() {
  			util.PushErrMsg(Conf.Language(214), 5000)
  			return
-@@ -1519,7 +1520,8 @@ func UploadCloudSnapshot(tag, id string) (err error) {
- 
- 	handleCloudError := cloudRepoErrorHandler()
- 	defer func() { handleCloudError(err) }()
--	repo, err := newCloudRepositoryWithAssetSourceLocked()
-+	var backupProvider *sftpcloud.SFTP
-+	repo, err := newCloudRepositoryWithAssetSourceLocked(func(provider *sftpcloud.SFTP) { backupProvider = provider })
- 	if err != nil {
- 		return
- 	}
 @@ -1530,7 +1532,7 @@ func UploadCloudSnapshot(tag, id string) (err error) {
  			util.PushErrMsg(Conf.Language(29), 5000)
  			return

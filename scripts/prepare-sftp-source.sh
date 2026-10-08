@@ -41,8 +41,8 @@ else
  transform_dir=$(mktemp -d)
  trap 'rm -rf "$transform_dir"' EXIT
  GO111MODULE=off GOOS= GOARCH= CGO_ENABLED=0 GOTOOLCHAIN=local go build \
-  -o "$transform_dir/apply-account.exe" "$patch_root/patches/sftp/transforms/account.go"
- "$transform_dir/apply-account.exe" kernel/api/setting.go
+  -o "$transform_dir/apply-account.exe" "$patch_root/patches/sftp/transforms/account.go" "$patch_root/patches/sftp/transforms/backup.go"
+ "$transform_dir/apply-account.exe" kernel/api/setting.go kernel/model/repository.go
  cp "$patch_root/overlays/kernel/api/sftp_account.go" kernel/api/
 
 fi

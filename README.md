@@ -34,7 +34,7 @@ SFTP 适配层实现存储接口，不维护另一套同步算法。
 GitHub Actions 每 6 小时检查一次上游稳定 release，也支持手动运行
 [Track upstream releases](https://github.com/lovitus/siyuan-unlock-sftp/actions/workflows/release-cron.yml)。
 所有新稳定版本都会自动尝试应用当前补丁，无需加入版本白名单。
-先检查桌面端和容器补丁；首次 patch 冲突会失败并在 release 草稿中保存故障及原始日志链接。
+先检查桌面端和容器补丁，并编译一次内核，通过后才启动平台构建；首次 patch 冲突会失败并在 release 草稿中保存故障及原始日志链接。
 相同上游源码和补丁的后续定时检查跳过重复失败；新版本、源码或补丁变化会自动重试，
 也可通过 **Run workflow** 或 **Re-run jobs** 手动重试。网络、工具链和后续构建错误不计为已知 patch 冲突。
 打补丁并构建成功后，在 `lovitus/siyuan-unlock-sftp` 发布 release；失败保留草稿以便重试。

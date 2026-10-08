@@ -207,10 +207,15 @@ A standard-library Go AST transform replaces only the body of the registered
 handler. It validates the API contract and signature, preserves the authorization
 callback, and refuses missing, ambiguous or changed contracts. Upstream changes
 inside that body no longer require copying a new version-specific text patch.
-Other source changes still use checked text patches; structural changes can
-still require compatibility work.
+The backup lease provider is also inserted by function name, exclusively inside
+`UploadCloudSnapshot`, so identical initialization in download code cannot match
+by accident. Other source changes still use checked text patches; structural
+changes can still require compatibility work.
 
-Desktop and container preparation must pass before platform builds start.
+All workflows configure a host Go toolchain before running the transforms.
+Desktop and container preparation must pass, followed by a Linux kernel compile
+with `fts5 sqlcipher`, before any platform builds start. The compilation uses
+the upstream version's `go.mod` toolchain requirement.
 A deterministic patch conflict (exit 42) fails the first run and records a
 fingerprint and original failure URL in the unpublished release notes. The
 fingerprint includes the version, official source commit, patches, overlays,
