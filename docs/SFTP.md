@@ -1,7 +1,7 @@
 # SFTP cloud storage and release CI
 
 This fork adds SFTP as provider `5`, on top of the unlock patches from
-`appdev/siyuan-unlock`. The patch is validated against SiYuan `v3.8.3` and `v3.8.4`.
+`appdev/siyuan-unlock`. Historical patches cover `v3.8.3` and `v3.8.4`; shared structural integration covers `v3.8.5` onward.
 This repository stores only patches, provider overlays, build/validation scripts,
 workflows and documentation. Release builds fetch the official version tag and
 apply `patches/` and `overlays/`; upstream source and dependencies are not vendored.
@@ -112,7 +112,7 @@ Everything runs in GitHub Actions; no local scheduler or Codex task is required.
 6. After all four workflows succeed, promote the versioned GHCR image to
    `latest`, then publish the completed release.
 
-Failed builds leave the release in draft and the next scheduled run retries.
+Failed builds leave the release in draft. Unchanged deterministic compatibility failures are deduplicated; transient failures remain retryable.
 The workflow uses a concurrency group to serialize release runs. Future upstream
 changes that conflict with a patch require updating the patch in this repository;
 CI reports the conflict rather than releasing a build without SFTP support.
@@ -156,7 +156,7 @@ From this repository, run `python3 scripts/test-release-tracking.py` and
 
 The **Test SFTP patch** workflow runs independently on patch changes and pull
 requests, even when the matching release already exists. It applies patches to
-the supported `v3.8.3` baseline and tests the real DejaVu sync → tagged backup →
+the regression versions `v3.8.3` through `v3.8.7` and tests the real DejaVu sync → tagged backup →
 purge → restore lifecycle with an empty destination repository. It does not
 rebuild or replace published release assets.
 
@@ -200,72 +200,33 @@ mobile applications still need separate validation.
 Every six hours, the workflow checks the latest stable `appdev/siyuan-unlock`
 release. Every unpublished version automatically attempts patch preparation;
 there is no version allowlist. Historical patch sets remain for `v3.8.3` and
-`v3.8.4`. Newer versions use the components under `patches/sftp/current/`.
+`v3.8.4`. Newer versions share the code under `patches/sftp/transforms/`
+and `overlays/`, with no per-version copies.
 
-The cloud-user implementation lives in `overlays/kernel/api/sftp_account.go`.
-A standard-library Go AST transform replaces only the body of the registered
-handler. It validates the API contract and signature, preserves the authorization
-callback, and refuses missing, ambiguous or changed contracts. Upstream changes
-inside that body no longer require copying a new version-specific text patch.
-The backup lease provider is also inserted by function name, exclusively inside
-`UploadCloudSnapshot`, so identical initialization in download code cannot match
-by accident. Other source changes still use checked text patches; structural
-changes can still require compatibility work.
+Go and TypeScript AST transforms locate the provider selector, settings mount,
+configuration fields and repository hooks by structure. SFTP form persistence,
+API handlers, configuration and provider implementation live in independent
+files. Existing upstream S3/WebDAV rendering and API authorization remain intact.
+The config adapter selects the pointer or immutable `ConfSection` interface by
+its actual type. Dependency additions match module names and preserve upstream
+versions. Missing or ambiguous hooks stop preparation with exit 42.
 
-All workflows configure a host Go toolchain before running the transforms.
-Desktop and container preparation must pass, followed by a Linux kernel compile
-with `fts5 sqlcipher`, before any platform builds start. The compilation uses
-the upstream version's `go.mod` toolchain requirement.
-A deterministic patch conflict (exit 42) fails the first run and records a
-fingerprint and original failure URL in the unpublished release notes. The
-fingerprint includes the version, official source commit, patches, overlays,
-scripts and workflows. Unchanged scheduled attempts report **patch blocked** in
-the Actions summary and skip all builds; they do not publish a release or claim
-compatibility passed. The record persists in the draft rather than an expiring
-Actions cache. Do not remove its HTML marker unless intentionally resetting it.
+All workflows install the host Go/Node tools and a locked TypeScript parser.
+Desktop/container preparation, real upstream settings regression checks and a
+Linux kernel compile with `fts5 sqlcipher` must pass before platform builds start.
 
-New versions, changed source commits or changed patch/build inputs automatically
-retry. **Run workflow** and **Re-run jobs** also retry unchanged inputs. Successful
-preflight removes the failure record. Clone/network errors, missing tools and
-later compilation or packaging failures are not suppressed as patch conflicts.
-If persisting the failure record itself fails, the workflow remains failed and
-subsequent checks retry rather than silently discarding the error.
+A deterministic transformation, settings-contract or kernel compiler failure
+records a fingerprint and original run URL in the unpublished release notes.
+The fingerprint covers the upstream version/commit and build inputs, excluding
+installed dependencies and caches. Identical scheduled attempts skip builds and
+succeed with a **patch blocked** summary. New versions, source changes, patch
+changes, **Run workflow** and **Re-run jobs** retry automatically. Network,
+toolchain download and platform packaging errors remain retryable. Failure to
+save the record remains a visible error. Successful preflight clears the record.
 
-All platform builds must succeed before publishing the release and promoting
-the container image to `latest`. Published versions are skipped.
-
-The **Build and verify SFTP review** workflow builds the existing desktop,
-Android, iOS and container matrices from an explicit official version. It stores
-client packages as Actions artifacts with `source-revision.txt` identifying the
-patch commit, source tag, and run ID. Containers use the isolated GHCR tag
-`review-<full-patch-commit>`. Review runs do not overwrite a published release or
-promote the `latest` image. Scheduled stable-release behavior remains unchanged.
-
-To reproduce the native-package smoke test, install `asyncssh` in a disposable
-Python virtual environment, then start the loopback-only test server:
-
-```sh
-python scripts/validation/asyncssh_server.py --directory /tmp/sftp-server-new
-```
-
-In another terminal, run the validator against an extracted package. Each output
-directory must be new; the script creates three isolated workspaces, starts and
-stops their kernels, and records endpoint status and artifact hashes in
-`report.json`. It initializes the unlock account through the same API the UI
-calls, requires a nonempty SFTP path, tests bidirectional document sync and
-removal, and restores a tagged backup to a fresh workspace after cloud purge.
-
-```sh
-python scripts/validation/verify_sftp_artifact.py \
-  --kernel /path/to/Resources/kernel/SiYuan-Kernel \
-  --resources /path/to/Resources \
-  --sftp-config /tmp/sftp-server-new/sftp.json \
-  --output /tmp/sftp-artifact-validation-new
-```
-
-These are separate native processes on one host, not tests on multiple physical
-devices. Only use the disposable server configuration with this validator: it
-creates a cloud repository, uploads test documents, and performs cloud cleanup.
-
-See the [2026-09-16 artifact validation record](validation/2026-09-16/README.md)
-for the tested commit, exact package hashes, checks, and validation limits.
+Drafts carry a `sftp-release:<version>` marker. Legacy `untagged-*` drafts require
+both the exact generated title and upstream release URL. A deterministic canonical
+draft is reused by ID, and all matching drafts contribute known-failure evidence.
+Every metadata update explicitly includes the real tag. Platform jobs only upload
+to the existing draft; the final job publishes that same ID after every build
+succeeds. Existing duplicate drafts and their assets are preserved.

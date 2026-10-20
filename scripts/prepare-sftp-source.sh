@@ -23,8 +23,8 @@ apply_patch() {
   exit "$result"
  fi
 }
-# Keep the historical patch set for v3.8.3 and v3.8.4. Try the current patch set
-# on every newer release; git apply failures stop preflight before builds.
+# Historical releases keep their original implementation. All newer releases
+# share overlays and structural hooks selected by API shape, never version.
 if [[ "$version" == v3.8.3 ]]; then
  for patch in disable-update default-config mock-vip-user; do
   apply_patch "$patch_root/patches/siyuan/$patch.patch"
@@ -34,17 +34,18 @@ if [[ "$version" == v3.8.3 ]]; then
 elif [[ "$version" == v3.8.4 ]]; then
  apply_patch "$patch_root/patches/sftp/source-v3.8.4.patch"
 else
- for component in account ui dependencies updater provider; do
-  apply_patch "$patch_root/patches/sftp/current/$component.patch"
- done
- # Standard-library AST transform, compiled for the host even in cross builds.
+ # Compile for the host even when the caller has set cross-build variables.
  transform_dir=$(mktemp -d)
  trap 'rm -rf "$transform_dir"' EXIT
  GO111MODULE=off GOOS= GOARCH= CGO_ENABLED=0 GOTOOLCHAIN=local go build \
-  -o "$transform_dir/apply-account.exe" "$patch_root/patches/sftp/transforms/account.go" "$patch_root/patches/sftp/transforms/backup.go"
- "$transform_dir/apply-account.exe" kernel/api/setting.go kernel/model/repository.go
- cp "$patch_root/overlays/kernel/api/sftp_account.go" kernel/api/
-
+  -o "$transform_dir/apply-source.exe" "$patch_root/patches/sftp/transforms/account.go" "$patch_root/patches/sftp/transforms/source.go"
+ "$transform_dir/apply-source.exe" .
+ node "$patch_root/patches/sftp/transforms/frontend.mjs" .
+ python3 "$patch_root/patches/sftp/transforms/dependencies.py" .
+ for component in api apicontract conf model; do
+  cp "$patch_root/overlays/kernel/$component/"*.go "kernel/$component/"
+ done
+ cp "$patch_root/overlays/app/src/config/tabs/sftp.ts" app/src/config/tabs/
 fi
 if [[ "${3:-desktop}" == docker ]]; then
  # The entrypoint already invokes /opt/siyuan/kernel; CMD contains only its args.

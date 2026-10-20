@@ -3,9 +3,8 @@
 import json
 import os
 import re
-import subprocess
 from pathlib import Path
-from release_state import api, find_release, fingerprint, failed_before
+from release_state import api, find_release, fingerprint, failed_before, update_draft, version_marker
 
 
 def main():
@@ -29,6 +28,8 @@ def main():
     manual_retry = (os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' or
                     int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')) > 1)
     if failed_before(release, key) and not manual_retry:
+        if release.get('tag_name') != tag or version_marker(tag) not in (release.get('body') or ''):
+            update_draft(repo, tag, release, request=api)
         message = (f'{tag}: unchanged known patch conflict; build skipped. '
                    'No release was published. Update patches or use Run workflow to retry.\n\n'
                    + (release.get('body') or ''))
@@ -44,17 +45,17 @@ def main():
     manager = package['packageManager']
     if not re.fullmatch(r'pnpm@\d+\.\d+\.\d+(?:\+sha\d+\.[a-fA-F0-9]+)?', manager):
         raise ValueError('Unexpected package manager: ' + manager)
-    with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-        output.write(f'pending=true\nversion={tag}\npackage_manager={manager}\nsource_sha={source_sha}\npatch_fingerprint={key}\n')
     if release is None:
-        subprocess.run(['gh', 'release', 'create', tag, '--repo', repo,
-                        '--target', os.environ['GITHUB_SHA'], '--draft', '--title', f'SiYuan SFTP {tag}',
-                        '--notes', f"Based on {upstream['html_url']}. Adds SFTP cloud storage with an explicit remote path. Container images are published to GHCR."], check=True)
-    elif release['draft']:
-        # A retry may use a newer patch commit. Keep the draft tag target aligned
-        # with the source used by the build jobs and its eventual release assets.
-        subprocess.run(['gh', 'release', 'edit', tag, '--repo', repo,
-                        '--target', os.environ['GITHUB_SHA']], check=True)
+        release = api(f'repos/{repo}/releases', method='POST', data={
+            'tag_name': tag, 'target_commitish': os.environ['GITHUB_SHA'],
+            'draft': True, 'name': f'SiYuan SFTP {tag}',
+            'body': f"Based on {upstream['html_url']}. Adds SFTP cloud storage with an explicit remote path. Container images are published to GHCR.\n\n" + version_marker(tag),
+        })
+    else:
+        release = update_draft(repo, tag, release, request=api,
+                               target_commitish=os.environ['GITHUB_SHA'])
+    with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+        output.write(f'pending=true\nversion={tag}\npackage_manager={manager}\nsource_sha={source_sha}\npatch_fingerprint={key}\nrelease_id={release["id"]}\n')
     print(f'Building {tag}; the release stays draft until every build succeeds.')
 
 

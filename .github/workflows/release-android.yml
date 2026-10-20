@@ -53,11 +53,7 @@ jobs:
         with:
           path: siyuan-note
 
-      - name: Set up Go for source transforms
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: false
+      - uses: ./siyuan-note/.github/actions/setup-source-tools
 
       - name: clone origin and apply patches
         env:
@@ -179,7 +175,7 @@ jobs:
           test "${#appdev[@]}" -eq 1 && test -f "${appdev[0]}"
           cp "${original[0]}" "siyuan-unlock-$VERSION-android-arm64.apk"
           cp "${appdev[0]}" "siyuan-unlock-$VERSION-android-arm64-appdev.apk"
-          if [[ "$ARTIFACTS_ONLY" != true ]]; then gh release upload "$VERSION" "siyuan-unlock-$VERSION-android-arm64.apk" "siyuan-unlock-$VERSION-android-arm64-appdev.apk" --repo "$GITHUB_REPOSITORY" --clobber; fi
+          if [[ "$ARTIFACTS_ONLY" != true ]]; then python3 "$GITHUB_WORKSPACE/siyuan-note/scripts/upload-release-assets.py" "$VERSION" "siyuan-unlock-$VERSION-android-arm64.apk" "siyuan-unlock-$VERSION-android-arm64-appdev.apk"; fi
 
       - name: Record build source
         if: inputs.artifactsOnly

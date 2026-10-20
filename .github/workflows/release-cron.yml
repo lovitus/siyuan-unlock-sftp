@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - '.github/workflows/**'
+      - '.github/actions/**'
       - 'patches/**'
       - 'overlays/**'
       - 'scripts/*sftp*'
@@ -25,6 +26,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
       pending: ${{ steps.release.outputs.pending }}
       version: ${{ steps.release.outputs.version }}
       package_manager: ${{ steps.release.outputs.package_manager }}
@@ -32,16 +34,14 @@ jobs:
       patch_fingerprint: ${{ steps.release.outputs.patch_fingerprint }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go for source transforms
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: false
+      - uses: ./.github/actions/setup-source-tools
       - name: Test release detection
         run: |
           python3 scripts/test-release-tracking.py
           python3 scripts/test-release-state.py
+          python3 scripts/test-release-upload.py
           GO111MODULE=off go test ./patches/sftp/transforms
+          node patches/sftp/transforms/frontend.test.mjs
       - name: Check upstream published release
         id: release
         env:
@@ -54,11 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go for source transforms
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: false
+      - uses: ./.github/actions/setup-source-tools
       - name: Verify source patches before starting platform builds
         env:
           VERSION: ${{ needs.check.outputs.version }}
@@ -72,8 +68,12 @@ jobs:
           go-version-file: ${{ runner.temp }}/sftp-desktop/kernel/go.mod
           cache-dependency-path: ${{ runner.temp }}/sftp-desktop/kernel/go.sum
       - name: Compile kernel before starting platform builds
-        working-directory: ${{ runner.temp }}/sftp-desktop/kernel
-        run: go build -tags 'fts5 sqlcipher' -o "$RUNNER_TEMP/sftp-kernel-preflight" .
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE_SHA: ${{ needs.check.outputs.source_sha }}
+          PATCH_FINGERPRINT: ${{ needs.check.outputs.patch_fingerprint }}
+        run: python3 scripts/release-preflight.py --compile
 
   desktop:
     needs: [check, preflight]
@@ -130,4 +130,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.check.outputs.version }}
-        run: gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          RELEASE_ID: ${{ needs.check.outputs.release_id }}
+        run: gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -f tag_name="$VERSION" -F draft=false -f make_latest=true --silent

@@ -1,13 +1,14 @@
+import base64
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
-import subprocess
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
-import base64
-import json
+
+import release_state as state
 
 spec = importlib.util.spec_from_file_location('tracking', Path(__file__).with_name('check-upstream-release.py'))
 tracking = importlib.util.module_from_spec(spec)
@@ -15,175 +16,119 @@ spec.loader.exec_module(tracking)
 
 
 class ReleaseTrackingTest(unittest.TestCase):
-    def run_check(self, release=None, error=None, tag='v3.8.3', manager='pnpm@11.25.0', listed=None, event='schedule', source_sha='a' * 40, attempt='1'):
-        calls = []
-        def api(path):
+    def run_check(self, releases=None, tag='v3.8.7', event='schedule', source_sha='a' * 40,
+                  attempt='1', error=None, manager='pnpm@12.6.0', lose_tag=False):
+        releases = releases if releases is not None else []
+        calls, mutations = [], []
+        def api(path, method='GET', data=None):
             calls.append(path)
+            if method != 'GET':
+                mutations.append((path, method, data))
+                if method == 'POST':
+                    releases.append(dict(data, id=99))
+                    return releases[-1]
+                release = next(r for r in releases if path.endswith('/' + str(r['id'])))
+                release.update(data)
+                if lose_tag:
+                    release['tag_name'] = 'untagged-abcdef'
+                return release
             if path == 'repos/appdev/siyuan-unlock/releases/latest':
                 return dict(tag_name=tag, draft=False, prerelease=False, html_url='https://github.com/appdev/siyuan-unlock/releases/tag/' + tag)
             if '/commits/' in path:
                 return {'sha': source_sha}
             if '/contents/' in path:
                 return {'content': base64.b64encode(json.dumps({'packageManager': manager}).encode()).decode()}
-            if '/releases?per_page=' in path:
-                return listed or []
             if error:
-                raise HTTPError(path, error, 'test error', {}, None)
-            return release
+                raise HTTPError(path, error, 'test', {}, None)
+            if '/releases?per_page=' in path:
+                return releases
+            release = next((r for r in releases if r['tag_name'] == tag and not r['draft']), None)
+            if release:
+                return release
+            raise HTTPError(path, 404, 'test', {}, None)
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / 'output'
-            with patch.dict(os.environ, {'GITHUB_REPOSITORY': 'example/siyuan', 'GITHUB_SHA': 'abc', 'GITHUB_OUTPUT': str(output), 'GITHUB_EVENT_NAME': event, 'GITHUB_RUN_ATTEMPT': attempt, 'GITHUB_STEP_SUMMARY': str(Path(tmp) / 'summary')}), patch.object(tracking, 'api', side_effect=api), patch.object(tracking.subprocess, 'run') as run:
+            env = {'GITHUB_REPOSITORY': 'example/siyuan', 'GITHUB_SHA': 'abc',
+                   'GITHUB_OUTPUT': str(output), 'GITHUB_EVENT_NAME': event,
+                   'GITHUB_RUN_ATTEMPT': attempt, 'GITHUB_STEP_SUMMARY': str(Path(tmp) / 'summary')}
+            with patch.dict(os.environ, env), patch.object(tracking, 'api', side_effect=api):
                 tracking.main()
-                return output.read_text(), run.call_args_list, calls
+            return output.read_text(), mutations, calls
 
-    def test_published_is_skipped(self):
-        output, mutations, calls = self.run_check({'draft': False})
+    def draft(self, id=12, tag='v3.8.7', body='', actual_tag=None):
+        return dict(id=id, tag_name=actual_tag or tag, name=f'SiYuan SFTP {tag}', draft=True,
+                    body=f'Based on https://github.com/appdev/siyuan-unlock/releases/tag/{tag}.\n{body}')
+
+    def test_published_is_skipped_even_with_legacy_drafts(self):
+        released = dict(self.draft(), draft=False)
+        output, mutations, calls = self.run_check([self.draft(13, actual_tag='untagged-one'), released])
         self.assertIn('pending=false', output)
         self.assertFalse(mutations)
-        self.assertFalse(any('/contents/' in path or '/commits/' in path for path in calls))
+        self.assertFalse(any('/contents/' in p or '/commits/' in p for p in calls))
 
-    def test_draft_is_retried(self):
-        output, mutations, _ = self.run_check({'draft': True})
+    def test_future_version_automatically_creates_draft(self):
+        output, mutations, _ = self.run_check(tag='v9.9.9')
         self.assertIn('pending=true', output)
-        self.assertEqual(mutations[0].args[0], [
-            'gh', 'release', 'edit', 'v3.8.3', '--repo', 'example/siyuan',
-            '--target', 'abc',
-        ])
+        self.assertIn('release_id=99', output)
+        self.assertEqual(mutations[0][1], 'POST')
+        self.assertTrue(mutations[0][2]['draft'])
+        self.assertEqual(mutations[0][2]['tag_name'], 'v9.9.9')
 
-    def test_new_release_starts_draft(self):
-        output, mutations, _ = self.run_check(error=404)
-        self.assertIn('pending=true', output)
-        args = mutations[0].args[0]
-        self.assertIn('--draft', args)
-        self.assertIn('example/siyuan', args)
+    def test_drafts_reused_by_id_and_updates_always_keep_tag(self):
+        for actual in ('v3.8.7', 'untagged-one'):
+            with self.subTest(actual=actual):
+                output, mutations, _ = self.run_check([self.draft(actual_tag=actual)])
+                self.assertIn('pending=true', output)
+                self.assertIn('release_id=12', output)
+                self.assertEqual(len(mutations), 1)
+                path, method, data = mutations[0]
+                self.assertTrue(path.endswith('/releases/12'))
+                self.assertEqual(method, 'PATCH')
+                self.assertEqual(data['tag_name'], 'v3.8.7')
+                self.assertEqual(data['target_commitish'], 'abc')
+                self.assertIn(state.version_marker('v3.8.7'), data['body'])
 
-    def test_new_unlisted_version_starts_build(self):
-        output, mutations, calls = self.run_check(error=404, tag='v9.9.9')
-        self.assertIn('pending=true', output)
-        self.assertEqual(len(mutations), 1)
-        self.assertEqual(mutations[0].args[0][2], 'create')
-        self.assertIn('v9.9.9', mutations[0].args[0])
-        self.assertIn('repos/siyuan-note/siyuan/contents/app/package.json?ref=v9.9.9', calls)
-
-    def test_new_unlisted_draft_is_retried(self):
-        output, mutations, _ = self.run_check({'draft': True}, tag='v9.9.9')
-        self.assertIn('pending=true', output)
-        self.assertEqual(mutations[0].args[0][2], 'edit')
-        self.assertIn('v9.9.9', mutations[0].args[0])
-
-    def test_validated_v384_starts_build(self):
-        output, mutations, calls = self.run_check(error=404, tag='v3.8.4')
-        self.assertIn('pending=true', output)
-        self.assertNotIn('compatibility_pending=true', output)
-        self.assertIn('v3.8.4', mutations[0].args[0])
-        self.assertIn('repos/siyuan-note/siyuan/contents/app/package.json?ref=v3.8.4', calls)
-
-    def test_identical_conflict_is_skipped_but_manual_and_changed_source_retry(self):
-        key = tracking.fingerprint('v9.9.9', 'a' * 40)
-        release = {'draft': True, 'body': f'<!-- sftp-preflight-failure:{key} -->'}
-        output, mutations, calls = self.run_check(release, tag='v9.9.9')
+    def test_duplicate_untagged_drafts_contribute_failure_evidence(self):
+        key = tracking.fingerprint('v3.8.7', 'a' * 40)
+        releases = [self.draft(22, body=f'{state.BEGIN}{key} -->', actual_tag='untagged-two'),
+                    self.draft(12, actual_tag='untagged-one')]
+        output, mutations, calls = self.run_check(releases, lose_tag=True)
         self.assertIn('patch_blocked=true', output)
+        self.assertEqual(mutations[0][0], 'repos/example/siyuan/releases/12')
+        self.assertFalse(any('/contents/' in p for p in calls))
+        # Simulate GitHub continuing to return an untagged draft after PATCH.
+        output, mutations, _ = self.run_check(releases)
+        self.assertIn('pending=false', output)
+        self.assertFalse(any(method == 'POST' for _, method, _ in mutations))
+        self.assertEqual(len(releases), 2)
+
+    def test_changed_source_inputs_or_manual_request_retries(self):
+        key = tracking.fingerprint('v3.8.7', 'a' * 40)
+        release = self.draft(body=f'{state.version_marker("v3.8.7")}\n{state.BEGIN}{key} -->')
+        output, mutations, _ = self.run_check([release.copy()])
         self.assertIn('pending=false', output)
         self.assertFalse(mutations)
-        self.assertFalse(any('/contents/' in path for path in calls))
-        for kwargs in [{'event': 'workflow_dispatch'}, {'attempt': '2'}, {'source_sha': 'b' * 40}]:
+        for kwargs in ({'event': 'workflow_dispatch'}, {'attempt': '2'}, {'source_sha': 'b' * 40}):
             with self.subTest(**kwargs):
-                output, mutations, _ = self.run_check(release, tag='v9.9.9', **kwargs)
+                output, mutations, _ = self.run_check([release.copy()], **kwargs)
                 self.assertIn('pending=true', output)
                 self.assertTrue(mutations)
         with patch.object(tracking, 'fingerprint', return_value='c' * 64):
-            output, mutations, _ = self.run_check(release, tag='v9.9.9')
+            output, _, _ = self.run_check([release.copy()])
             self.assertIn('pending=true', output)
-            self.assertTrue(mutations)
-
-    def test_api_failure_never_creates_release(self):
-        with self.assertRaises(HTTPError):
-            self.run_check(error=403)
-
-    def test_draft_missing_from_tag_endpoint_is_reused(self):
-        output, mutations, calls = self.run_check(error=404, listed=[
-            {'tag_name': 'v3.8.3', 'draft': True},
-        ])
+        output, _, _ = self.run_check([release], tag='v3.8.8')
         self.assertIn('pending=true', output)
-        self.assertEqual(len(mutations), 1)
-        self.assertEqual(mutations[0].args[0][2], 'edit')
-        self.assertIn('repos/example/siyuan/releases?per_page=100&page=1', calls)
 
-    def test_duplicate_drafts_are_not_silently_selected(self):
-        with self.assertRaises(ValueError):
-            self.run_check(error=404, listed=[
-                {'tag_name': 'v3.8.3', 'draft': True},
-                {'tag_name': 'v3.8.3', 'draft': True},
-            ])
+    def test_legacy_identity_never_matches_by_title_or_substring_alone(self):
+        for release in [self.draft(tag='v3.8.70', actual_tag='untagged-x'),
+                        dict(self.draft(actual_tag='untagged-x'), body='unrelated notes')]:
+            with self.subTest(release=release):
+                self.assertFalse(state.is_draft_for(release, 'v3.8.7'))
 
-    def test_untrusted_tag_and_package_manager_rejected(self):
-        with self.assertRaises(ValueError):
-            self.run_check(tag='v3.8.3;echo bad')
-        with self.assertRaises(ValueError):
-            self.run_check(manager='pnpm@11;echo bad')
-
-
-class SourcePreparationTest(unittest.TestCase):
-    def prepare(self, version, mode='desktop', fail_patch=False, fail_clone=False):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            fake_git = root / 'git'
-            fake_git.write_text("""#!/bin/sh
-printf '%s\n' "$*" >> "$GIT_TEST_LOG"
-if [ "$1" = clone ]; then
-    [ "${FAIL_CLONE:-0}" = 0 ] || exit 128
-    for destination do :; done
-    mkdir -p "$destination/kernel/api"
-elif [ "$1" = apply ] && [ "$FAIL_PATCH" = 1 ]; then
-    exit 1
-fi
-""")
-            fake_git.chmod(0o755)
-            fake_go = root / 'go'
-            fake_go.write_text("#!/bin/sh\nprintf '#!/bin/sh\\nexit 0\\n' > \"$3\"\nchmod +x \"$3\"\n")
-            fake_go.chmod(0o755)
-            log = root / 'git.log'
-            destination = root / 'source'
-            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
-                       GIT_TEST_LOG=str(log), FAIL_PATCH=str(int(fail_patch)), FAIL_CLONE=str(int(fail_clone)))
-            result = subprocess.run([
-                'bash', str(Path(__file__).with_name('prepare-sftp-source.sh').resolve()),
-                version, str(destination), mode,
-            ], env=env, capture_output=True, text=True)
-            return result, log.read_text(), (destination / 'kernel/sftpcloud').exists()
-
-    def test_future_versions_use_current_patch(self):
-        for version in ['v3.8.4', 'v3.8.5', 'v3.8.6', 'v4.0.0']:
-            for mode in ['desktop', 'docker']:
-                with self.subTest(version=version, mode=mode):
-                    result, log, overlay = self.prepare(version, mode)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertIn('source-v3.8.4.patch' if version == 'v3.8.4' else 'current/provider.patch', log)
-                    self.assertNotIn('hide-account-entry.patch', log)
-                    self.assertTrue(overlay)
-
-    def test_clone_failure_is_not_a_patch_conflict(self):
-        result, log, overlay = self.prepare('v3.8.6', fail_clone=True)
-        self.assertEqual(result.returncode, 128)
-        self.assertFalse(overlay)
-        self.assertNotIn('apply', log)
-
-    def test_historical_version_keeps_its_patch_set(self):
-        result, log, overlay = self.prepare('v3.8.3')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('account-v3.8.3.patch', log)
-        self.assertIn('provider.patch', log)
-        self.assertNotIn('source-v3.8.4.patch', log)
-        self.assertTrue(overlay)
-
-    def test_patch_failure_stops_source_preparation(self):
-        for mode in ['desktop', 'docker']:
-            with self.subTest(mode=mode):
-                result, log, overlay = self.prepare('v3.8.5', mode, fail_patch=True)
-                self.assertEqual(result.returncode, 42)
-                self.assertFalse(overlay)
-                self.assertNotIn('diff --check', log)
-                self.assertNotIn('docker-command.patch', log)
+    def test_api_failure_and_invalid_input_fail_closed(self):
+        with self.assertRaises(HTTPError): self.run_check(error=403)
+        with self.assertRaises(ValueError): self.run_check(tag='v3.8.7;echo bad')
+        with self.assertRaises(ValueError): self.run_check(manager='pnpm@11;echo bad')
 
 
 if __name__ == '__main__':

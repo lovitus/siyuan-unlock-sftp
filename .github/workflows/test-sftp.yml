@@ -25,14 +25,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: [v3.8.3, v3.8.4, v3.8.5, v3.8.6]
+        version: [v3.8.3, v3.8.4, v3.8.5, v3.8.6, v3.8.7]
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go for source transforms
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: false
+      - uses: ./.github/actions/setup-source-tools
       - name: Apply patches to supported SiYuan release
         env:
           VERSION: ${{ matrix.version }}

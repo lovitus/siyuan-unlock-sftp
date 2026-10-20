@@ -109,11 +109,7 @@ jobs:
         with:
           path: siyuan-note
 
-      - name: Set up Go for source transforms
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: false
+      - uses: ./siyuan-note/.github/actions/setup-source-tools
 
       - name: clone origin and apply patches
         env:
@@ -255,30 +251,15 @@ jobs:
         run: pnpm run ${{ matrix.config.electron_args }}
         working-directory: ${{ github.workspace }}/siyuan-note/siyuan/app
 
-      - if: ${{ !inputs.artifactsOnly }}
-        uses: joutvhu/get-release@v1
-        id: get_current_release
-        with:
-          tag_name: ${{ inputs.version }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Electron App
+      - name: Upload Electron App to existing draft
         if: ${{ !inputs.artifactsOnly }}
-        uses: ncipollo/release-action@v1
+        shell: bash
+        working-directory: siyuan-note/siyuan/app/build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          artifactErrorsFailBuild: true
-          artifacts: ${{ github.workspace }}/siyuan-note/siyuan/app/build/siyuan-*-${{ matrix.config.suffix }}
-          name: siyuan-unlock-${{ inputs.version }}-${{ matrix.config.suffix }}
-          allowUpdates: true
-          omitDraftDuringUpdate: true
-          omitBody: true
-          omitName: true
-          tag: ${{ inputs.version }}
-          replacesArtifacts: true
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          SUFFIX: ${{ matrix.config.suffix }}
+        run: python3 ../../../scripts/upload-release-assets.py "$VERSION" siyuan-*-"$SUFFIX"
 
       - name: Record build source
         if: inputs.artifactsOnly
