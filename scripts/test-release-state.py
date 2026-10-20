@@ -76,6 +76,7 @@ class ConflictStateTest(unittest.TestCase):
                'EXPECTED_SOURCE_SHA': 'b' * 40, 'GITHUB_RUN_ID': '123'}
         for code, log, blocked in [(1, 'model/sftp.go:42:2: undefined: changedAPI\n', True),
                                     (1, 'go: downloading dependency: dial tcp: timeout\n', False),
+                                    (1, '--- FAIL: TestIndependentProcessSync (1.00s)\n', True),
                                     (0, '', False)]:
             with self.subTest(log=log), patch.dict(os.environ, env), \
                  patch.object(preflight.subprocess, 'run', return_value=Mock(returncode=code, stdout=log)), \
@@ -85,6 +86,18 @@ class ConflictStateTest(unittest.TestCase):
                 self.assertEqual(record.call_count, int(blocked))
                 self.assertEqual(clear.call_count, int(code == 0))
 
+
+class DockerSourceTest(unittest.TestCase):
+    def test_shared_resources_are_only_added_to_frontend_stage(self):
+        spec = importlib.util.spec_from_file_location('docker_transform', state.ROOT / 'patches/sftp/transforms/docker.py')
+        docker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docker)
+        source = "FROM --platform=$BUILDPLATFORM node:22 AS node-build\nWORKDIR /app\nRUN install\nADD app/ .\nRUN <<BUILD\npnpm run build\nBUILD\nFROM golang AS go-build\nRUN go build\n"
+        result = docker.transform(source)
+        self.assertIn('ADD app/ .\nCOPY kernel/ /kernel/\nRUN', result)
+        self.assertEqual(result.count('COPY kernel/ /kernel/'), 1)
+        self.assertEqual(docker.transform(result), result)
+        with self.assertRaises(ValueError): docker.transform(source.replace('pnpm run build', 'unknown-command'))
 
 if __name__ == '__main__':
     unittest.main()

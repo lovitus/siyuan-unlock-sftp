@@ -213,7 +213,7 @@ versions. Missing or ambiguous hooks stop preparation with exit 42.
 
 All workflows install the host Go/Node tools and a locked TypeScript parser.
 Desktop/container preparation, real upstream settings regression checks and a
-Linux kernel compile with `fts5 sqlcipher` must pass before platform builds start.
+SFTP provider tests and a Linux kernel compile with `fts5 sqlcipher` must pass before platform builds start.
 
 A deterministic transformation, settings-contract or kernel compiler failure
 records a fingerprint and original run URL in the unpublished release notes.

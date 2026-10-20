@@ -265,3 +265,25 @@ func TestMalformedRemoteLockDoesNotPanic(t *testing.T) {
 		})
 	}
 }
+
+// A short metadata operation by another process must not fail a normal sync.
+func TestLockGuardWaitsForContention(t *testing.T) {
+	s, cfg := testCloud(t)
+	guard := filepath.Join(cfg.Path, "main/siyuan/.sftp-lock-guard")
+	if err := os.MkdirAll(guard, 0700); err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan error, 1)
+	go func() { time.Sleep(100 * time.Millisecond); released <- os.Remove(guard) }()
+	data, _ := json.Marshal(syncLock{DeviceID: "contender", Time: time.Now().UnixMilli()})
+	_, err := s.UploadBytes("lock-sync", data, true)
+	if cleanup := <-released; cleanup != nil {
+		t.Fatal(cleanup)
+	}
+	if err != nil {
+		t.Fatalf("short guard contention failed: %v", err)
+	}
+	if err = s.RemoveObject("lock-sync"); err != nil {
+		t.Fatal(err)
+	}
+}

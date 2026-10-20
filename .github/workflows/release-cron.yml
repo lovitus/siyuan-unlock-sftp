@@ -67,7 +67,7 @@ jobs:
         with:
           go-version-file: ${{ runner.temp }}/sftp-desktop/kernel/go.mod
           cache-dependency-path: ${{ runner.temp }}/sftp-desktop/kernel/go.sum
-      - name: Compile kernel before starting platform builds
+      - name: Test SFTP and compile kernel before starting platform builds
         env:
           VERSION: ${{ needs.check.outputs.version }}
           GH_TOKEN: ${{ github.token }}

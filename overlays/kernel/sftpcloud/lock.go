@@ -35,8 +35,23 @@ func (s *SFTP) withLockGuard(c *sftp.Client, fn func(string) error) (err error) 
 	if err = c.MkdirAll(path.Dir(guard)); err != nil {
 		return err
 	}
-	if err = c.Mkdir(guard); err != nil {
-		return fmt.Errorf("could not acquire SFTP lock guard (retry, or inspect a leftover guard after stopping all clients): %w", err)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if err = c.Mkdir(guard); err == nil {
+			break
+		}
+		// SFTP v3 servers commonly report an existing directory as FX_FAILURE.
+		// Only an observed directory is contention; never delete or steal it.
+		info, statErr := c.Lstat(guard)
+		if statErr != nil || !info.IsDir() {
+			return err
+		}
+		if !time.Now().Before(deadline) {
+			// DejaVu must recognize this as retryable without parsing numbers in
+			// the remote pathname as HTTP status codes.
+			return fmt.Errorf("SFTP lock guard remains busy; retry or inspect it after stopping all clients: %w", cloud.ErrCloudServiceUnavailable)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	defer func() {
 		cleanupErr := c.RemoveDirectory(guard)

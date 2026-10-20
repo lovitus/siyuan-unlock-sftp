@@ -154,6 +154,14 @@ func TestIndependentProcessSync(t *testing.T) {
 		t.Fatal("sync did not reach the injected TCP cut")
 	}
 	budget.Store(-1)
+	// The injected TCP cut can interrupt the short guard operation as well as
+	// payload transfer. A disconnected guard deliberately fails closed. All
+	// worker processes have exited here, so simulate the documented operator
+	// cleanup on this disposable server before retrying. Production never steals it.
+	guard := filepath.Join(cfg.Path, "main/siyuan/.sftp-lock-guard")
+	if err = os.Remove(guard); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
 	// A restarted instance must wait for the previous owner's lease to expire.
 	// Age only the test server's lock timestamp instead of sleeping 65 seconds.
 	lockPath := filepath.Join(cfg.Path, "main/siyuan/repo/lock-sync")

@@ -48,6 +48,9 @@ else
  cp "$patch_root/overlays/app/src/config/tabs/sftp.ts" app/src/config/tabs/
 fi
 if [[ "${3:-desktop}" == docker ]]; then
+ if [[ "$version" != v3.8.3 && "$version" != v3.8.4 ]]; then
+  python3 "$patch_root/patches/sftp/transforms/docker.py" .
+ fi
  # The entrypoint already invokes /opt/siyuan/kernel; CMD contains only its args.
  # Accept upstream incorporating this exact fix in a later stable tag.
  if ! git apply --reverse --check "$patch_root/patches/sftp/docker-command.patch" 2>/dev/null; then
