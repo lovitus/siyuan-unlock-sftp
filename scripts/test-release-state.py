@@ -30,6 +30,7 @@ class ConflictStateTest(unittest.TestCase):
             source.write_text('two')
             self.assertNotEqual(first, state.fingerprint('v1.0.0', 'a' * 40, root))
             self.assertNotEqual(first, state.fingerprint('v1.0.1', 'a' * 40, root))
+            self.assertNotEqual(first, state.fingerprint('v1.0.0', 'a' * 40, root, ios_sha='c' * 40))
 
     def test_failure_record_preserves_notes_and_is_replaced_not_appended(self):
         release = {'id': 12, 'tag_name': 'v1.0.0', 'draft': True, 'body': 'Original release notes'}
@@ -98,6 +99,34 @@ class DockerSourceTest(unittest.TestCase):
         self.assertEqual(result.count('COPY kernel/ /kernel/'), 1)
         self.assertEqual(docker.transform(result), result)
         with self.assertRaises(ValueError): docker.transform(source.replace('pnpm run build', 'unknown-command'))
+
+    def test_ocr_source_build_gets_patch_without_changing_other_stages(self):
+        spec = importlib.util.spec_from_file_location('docker_transform', state.ROOT / 'patches/sftp/transforms/docker.py')
+        docker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docker)
+        source = ('FROM node AS node-build\nWORKDIR /app\nCOPY kernel/ /kernel/\nRUN pnpm run build\n'
+                  'FROM alpine AS ocr-build\nRUN apk add --no-cache cmake git python3\n'
+                  'RUN python3 /onnxruntime/tools/ci_build/build.py\n'
+                  'FROM alpine\nRUN apk add --no-cache libstdc++\n')
+        result = docker.transform(source)
+        self.assertIn('RUN apk add --no-cache patch cmake git python3', result)
+        self.assertTrue(result.endswith('RUN apk add --no-cache libstdc++\n'))
+        self.assertEqual(docker.transform(result), result)
+
+
+class IOSSourceTest(unittest.TestCase):
+    def test_menu_preserves_lazy_identity_without_unavailable_storage(self):
+        spec = importlib.util.spec_from_file_location('ios_transform', state.ROOT / 'patches/sftp/transforms/ios.py')
+        ios = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ios)
+        source = ('class ViewController {\n  @available(iOS 16.0, *)\n'
+                  '  private lazy var textMenuInteraction = UIEditMenuInteraction(delegate: self)\n}\n')
+        result = ios.transform(source)
+        self.assertIn('private var textMenuInteractionStorage: AnyObject?', result)
+        self.assertIn('@available(iOS 16.0, *)\n  private var textMenuInteraction: UIEditMenuInteraction {', result)
+        self.assertIn('textMenuInteractionStorage = interaction', result)
+        self.assertEqual(ios.transform(result), result)
+        self.assertEqual(ios.transform('class OldController {}'), 'class OldController {}')
 
 if __name__ == '__main__':
     unittest.main()

@@ -3,6 +3,10 @@ name: release-ios
 on:
   workflow_call:
     inputs:
+      sourceSha:
+        description: "Resolved iOS source commit"
+        type: string
+        default: ''
       artifactsOnly:
         description: "Store build artifacts without updating a release"
         type: boolean
@@ -56,6 +60,13 @@ jobs:
 
       - uses: ./siyuan-note/.github/actions/setup-source-tools
 
+      - name: Check out resolved iOS source
+        uses: actions/checkout@v4
+        with:
+          repository: siyuan-note/siyuan-ios
+          ref: ${{ inputs.sourceSha }}
+          path: siyuan-note/siyuan-ios
+
       - name: clone origin and apply patches
         env:
           RELEASE_VERSION: ${{ inputs.version }}
@@ -69,8 +80,9 @@ jobs:
 
           cd ..
 
-          git clone --depth=1 https://github.com/siyuan-note/siyuan-ios.git
           cd siyuan-ios
+
+          python3 "$GITHUB_WORKSPACE/siyuan-note/patches/sftp/transforms/ios.py" .
 
           if [[ "$RELEASE_VERSION" == "v3.8.3" ]]; then
             echo "Skipping xcode-26-load-item.patch for v3.8.3: patch targets pre-update iOS sources"

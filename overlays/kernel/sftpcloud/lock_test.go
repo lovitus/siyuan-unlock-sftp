@@ -3,6 +3,7 @@ package sftpcloud
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/pkg/sftp"
 	"github.com/siyuan-note/dejavu"
@@ -285,5 +286,38 @@ func TestLockGuardWaitsForContention(t *testing.T) {
 	}
 	if err = s.RemoveObject("lock-sync"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type releasedGuardClient struct {
+	mkdirCalls int
+	statError  error
+}
+
+func (c *releasedGuardClient) Mkdir(string) error {
+	c.mkdirCalls++
+	if c.mkdirCalls == 1 {
+		return &sftp.StatusError{Code: 4} // EEXIST on SFTP v3
+	}
+	return nil
+}
+
+func (c *releasedGuardClient) Lstat(string) (os.FileInfo, error) {
+	return nil, c.statError
+}
+
+func TestLockGuardReleasedBetweenMkdirAndStat(t *testing.T) {
+	c := &releasedGuardClient{statError: os.ErrNotExist}
+	if err := acquireLockGuard(c, "/guard"); err != nil {
+		t.Fatal(err)
+	}
+	if c.mkdirCalls != 2 {
+		t.Fatal("must acquire with a second atomic mkdir, not infer ownership from lstat")
+	}
+	for _, statErr := range []error{os.ErrPermission, errors.New("connection lost")} {
+		c = &releasedGuardClient{statError: statErr}
+		if err := acquireLockGuard(c, "/guard"); err == nil || c.mkdirCalls != 1 {
+			t.Fatal("must fail closed on an unreadable guard")
+		}
 	}
 }

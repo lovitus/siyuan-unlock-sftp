@@ -35,23 +35,8 @@ func (s *SFTP) withLockGuard(c *sftp.Client, fn func(string) error) (err error) 
 	if err = c.MkdirAll(path.Dir(guard)); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if err = c.Mkdir(guard); err == nil {
-			break
-		}
-		// SFTP v3 servers commonly report an existing directory as FX_FAILURE.
-		// Only an observed directory is contention; never delete or steal it.
-		info, statErr := c.Lstat(guard)
-		if statErr != nil || !info.IsDir() {
-			return err
-		}
-		if !time.Now().Before(deadline) {
-			// DejaVu must recognize this as retryable without parsing numbers in
-			// the remote pathname as HTTP status codes.
-			return fmt.Errorf("SFTP lock guard remains busy; retry or inspect it after stopping all clients: %w", cloud.ErrCloudServiceUnavailable)
-		}
-		time.Sleep(20 * time.Millisecond)
+	if err = acquireLockGuard(c, guard); err != nil {
+		return err
 	}
 	defer func() {
 		cleanupErr := c.RemoveDirectory(guard)
@@ -67,6 +52,30 @@ func (s *SFTP) withLockGuard(c *sftp.Client, fn func(string) error) (err error) 
 		return err
 	}
 	return fn(p)
+}
+
+func acquireLockGuard(c interface {
+	Mkdir(string) error
+	Lstat(string) (os.FileInfo, error)
+}, guard string) error {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		err := c.Mkdir(guard)
+		if err == nil {
+			return nil
+		}
+		// SFTP v3 reports EEXIST as FX_FAILURE. The other owner can release
+		// its directory between our failed mkdir and lstat: ENOENT then means
+		// try the atomic mkdir again, never that we already own the guard.
+		info, statErr := c.Lstat(guard)
+		if (statErr != nil && !os.IsNotExist(statErr)) || (statErr == nil && !info.IsDir()) {
+			return err
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("SFTP lock guard remains busy; retry or inspect it after stopping all clients: %w", cloud.ErrCloudServiceUnavailable)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func readSyncLock(c *sftp.Client, p string) (*syncLock, error) {

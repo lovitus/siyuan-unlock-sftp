@@ -112,7 +112,7 @@ Everything runs in GitHub Actions; no local scheduler or Codex task is required.
 6. After all four workflows succeed, promote the versioned GHCR image to
    `latest`, then publish the completed release.
 
-Failed builds leave the release in draft. Unchanged deterministic compatibility failures are deduplicated; transient failures remain retryable.
+Failed builds leave the release in draft. Unchanged failed build inputs are deduplicated across the entire workflow; manual dispatch/rerun can retry transient failures.
 The workflow uses a concurrency group to serialize release runs. Future upstream
 changes that conflict with a patch require updating the patch in this repository;
 CI reports the conflict rather than releasing a build without SFTP support.
@@ -215,14 +215,19 @@ All workflows install the host Go/Node tools and a locked TypeScript parser.
 Desktop/container preparation, real upstream settings regression checks and a
 SFTP provider tests and a Linux kernel compile with `fts5 sqlcipher` must pass before platform builds start.
 
-A deterministic transformation, settings-contract or kernel compiler failure
-records a fingerprint and original run URL in the unpublished release notes.
-The fingerprint covers the upstream version/commit and build inputs, excluding
-installed dependencies and caches. Identical scheduled attempts skip builds and
-succeed with a **patch blocked** summary. New versions, source changes, patch
-changes, **Run workflow** and **Re-run jobs** retry automatically. Network,
-toolchain download and platform packaging errors remain retryable. Failure to
-save the record remains a visible error. Successful preflight clears the record.
+Before starting builds, the check saves the input fingerprint and workflow run ID
+in the unpublished release notes. The next schedule reads that run once and records
+any incomplete result, including packaging, upload, publication, cancellation and
+timeout failures. This works even when cancellation prevents a finalizer from running.
+Known preflight compatibility failures are recorded immediately. Later checks use
+the saved failure without polling the old run or rebuilding identical inputs.
+The fingerprint covers the upstream version/commit, the resolved iOS commit and
+local build inputs, excluding installed dependencies and caches. The iOS checkout
+uses that exact commit instead of a moving branch. New versions, source changes,
+patch/build configuration changes, **Run workflow** and **Re-run jobs** retry.
+Unchanged failed inputs skip builds with a **build blocked** summary and the original
+failure link. Transient failures can be retried manually; they do not retry forever.
+Failure to save the attempt prevents the build from starting.
 
 Drafts carry a `sftp-release:<version>` marker. Legacy `untagged-*` drafts require
 both the exact generated title and upstream release URL. A deterministic canonical

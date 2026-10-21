@@ -1,4 +1,4 @@
-"""Durable patch-conflict records stored in the unpublished release notes."""
+"""Durable build attempts and failures stored in unpublished release notes."""
 import hashlib
 import json
 import os
@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parent.parent
 BEGIN = '<!-- sftp-preflight-failure:'
 END = '<!-- /sftp-preflight-failure -->'
+ATTEMPT = r'<!-- sftp-build-attempt:([a-f0-9]{64}):([0-9]+) -->'
 
 
 def api(path, method='GET', data=None):
@@ -84,8 +85,9 @@ def update_draft(repo, tag, release, request=None, **changes):
                            data=dict(changes, tag_name=tag, body=body))
 
 
-def fingerprint(tag, source_sha, root=ROOT):
+def fingerprint(tag, source_sha, root=ROOT, *, ios_sha=''):
     digest = hashlib.sha256(f'{tag}\n{source_sha}\n'.encode())
+    digest.update(f'ios:{ios_sha}\n'.encode())
     for directory in ('patches', 'overlays', 'scripts', '.github/workflows', '.github/actions'):
         for path in sorted((root / directory).rglob('*')):
             if not path.is_file() or any(part in ('__pycache__', 'node_modules', '.git') for part in path.parts) or path.suffix == '.pyc':
@@ -105,19 +107,36 @@ def without_failure(body):
     return re.sub(r'\n*' + re.escape(BEGIN) + r'.*?' + re.escape(END), '', body or '', flags=re.S).rstrip()
 
 
-def record_failure(repo, tag, key, run_url, source_sha):
-    release = find_release(repo, tag)
+def with_attempt(body, key, run_id):
+    if not re.fullmatch(r'[a-f0-9]{64}', key) or not re.fullmatch(r'[0-9]+', run_id):
+        raise ValueError('Invalid build attempt identity')
+    body = re.sub(r'\n*' + ATTEMPT, '', without_failure(body)).rstrip()
+    return body + f'\n\n<!-- sftp-build-attempt:{key}:{run_id} -->'
+
+
+def previous_attempt(release, key, current_run_id):
+    if not release or not release['draft']:
+        return None
+    ids = [int(run_id) for body in [release.get('body') or '', *release.get('_failure_bodies', [])]
+           for recorded_key, run_id in re.findall(ATTEMPT, body)
+           if recorded_key == key and run_id != current_run_id]
+    return str(max(ids)) if ids else None
+
+
+def record_failure(repo, tag, key, run_url, source_sha, *, reason='Patch preparation failed', request=None):
+    request = request or api
+    release = find_release(repo, tag, request=request)
     if not release or not release['draft']:
         raise ValueError('Refusing to record patch failure without an unpublished draft')
     body = without_failure(release.get('body'))
     body += (f'\n\n{BEGIN}{key} -->\n'
-             f'### Patch compatibility blocked\n\n'
-             f'Patch preparation failed for `{tag}` at source `{source_sha}`. '
+             f'### Release build blocked\n\n'
+             f'{reason} for `{tag}` at source `{source_sha}`. '
              f'[Original failure]({run_url}).\n\n'
              'Identical scheduled attempts are skipped. A new upstream commit, '
              'patch/build-input change, or manual workflow dispatch retries automatically.\n'
              f'{END}')
-    update_draft(repo, tag, release, body=body)
+    update_draft(repo, tag, release, request=request, body=body)
 
 
 def clear_failure(repo, tag):

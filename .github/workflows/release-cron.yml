@@ -15,6 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
   packages: write
 
@@ -31,6 +32,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       package_manager: ${{ steps.release.outputs.package_manager }}
       source_sha: ${{ steps.release.outputs.source_sha }}
+      ios_sha: ${{ steps.release.outputs.ios_sha }}
       patch_fingerprint: ${{ steps.release.outputs.patch_fingerprint }}
     steps:
       - uses: actions/checkout@v4
@@ -100,6 +102,7 @@ jobs:
     with:
       version: ${{ needs.check.outputs.version }}
       packageManager: ${{ needs.check.outputs.package_manager }}
+      sourceSha: ${{ needs.check.outputs.ios_sha }}
     secrets: inherit
 
   docker:

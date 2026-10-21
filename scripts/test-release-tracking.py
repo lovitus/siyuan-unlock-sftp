@@ -17,12 +17,15 @@ spec.loader.exec_module(tracking)
 
 class ReleaseTrackingTest(unittest.TestCase):
     def run_check(self, releases=None, tag='v3.8.7', event='schedule', source_sha='a' * 40,
-                  attempt='1', error=None, manager='pnpm@12.6.0', lose_tag=False):
+                  attempt='1', error=None, manager='pnpm@12.6.0', lose_tag=False,
+                  ios_sha='c' * 40, run_id='456', runs=None, write_error=None):
         releases = releases if releases is not None else []
         calls, mutations = [], []
         def api(path, method='GET', data=None):
             calls.append(path)
             if method != 'GET':
+                if write_error:
+                    raise HTTPError(path, write_error, 'test', {}, None)
                 mutations.append((path, method, data))
                 if method == 'POST':
                     releases.append(dict(data, id=99))
@@ -34,6 +37,10 @@ class ReleaseTrackingTest(unittest.TestCase):
                 return release
             if path == 'repos/appdev/siyuan-unlock/releases/latest':
                 return dict(tag_name=tag, draft=False, prerelease=False, html_url='https://github.com/appdev/siyuan-unlock/releases/tag/' + tag)
+            if '/actions/runs/' in path:
+                return runs[path.rsplit('/', 1)[-1]]
+            if path == 'repos/siyuan-note/siyuan-ios/commits/HEAD':
+                return {'sha': ios_sha}
             if '/commits/' in path:
                 return {'sha': source_sha}
             if '/contents/' in path:
@@ -50,6 +57,7 @@ class ReleaseTrackingTest(unittest.TestCase):
             output = Path(tmp) / 'output'
             env = {'GITHUB_REPOSITORY': 'example/siyuan', 'GITHUB_SHA': 'abc',
                    'GITHUB_OUTPUT': str(output), 'GITHUB_EVENT_NAME': event,
+                   'GITHUB_RUN_ID': run_id,
                    'GITHUB_RUN_ATTEMPT': attempt, 'GITHUB_STEP_SUMMARY': str(Path(tmp) / 'summary')}
             with patch.dict(os.environ, env), patch.object(tracking, 'api', side_effect=api):
                 tracking.main()
@@ -73,6 +81,8 @@ class ReleaseTrackingTest(unittest.TestCase):
         self.assertEqual(mutations[0][1], 'POST')
         self.assertTrue(mutations[0][2]['draft'])
         self.assertEqual(mutations[0][2]['tag_name'], 'v9.9.9')
+        self.assertEqual(state.previous_attempt(mutations[0][2], tracking.fingerprint('v9.9.9', 'a' * 40, ios_sha='c' * 40), '457'), '456')
+        self.assertIn('ios_sha=' + 'c' * 40, output)
 
     def test_drafts_reused_by_id_and_updates_always_keep_tag(self):
         for actual in ('v3.8.7', 'untagged-one'):
@@ -89,11 +99,11 @@ class ReleaseTrackingTest(unittest.TestCase):
                 self.assertIn(state.version_marker('v3.8.7'), data['body'])
 
     def test_duplicate_untagged_drafts_contribute_failure_evidence(self):
-        key = tracking.fingerprint('v3.8.7', 'a' * 40)
+        key = tracking.fingerprint('v3.8.7', 'a' * 40, ios_sha='c' * 40)
         releases = [self.draft(22, body=f'{state.BEGIN}{key} -->', actual_tag='untagged-two'),
                     self.draft(12, actual_tag='untagged-one')]
         output, mutations, calls = self.run_check(releases, lose_tag=True)
-        self.assertIn('patch_blocked=true', output)
+        self.assertIn('build_blocked=true', output)
         self.assertEqual(mutations[0][0], 'repos/example/siyuan/releases/12')
         self.assertFalse(any('/contents/' in p for p in calls))
         # Simulate GitHub continuing to return an untagged draft after PATCH.
@@ -103,12 +113,12 @@ class ReleaseTrackingTest(unittest.TestCase):
         self.assertEqual(len(releases), 2)
 
     def test_changed_source_inputs_or_manual_request_retries(self):
-        key = tracking.fingerprint('v3.8.7', 'a' * 40)
+        key = tracking.fingerprint('v3.8.7', 'a' * 40, ios_sha='c' * 40)
         release = self.draft(body=f'{state.version_marker("v3.8.7")}\n{state.BEGIN}{key} -->')
         output, mutations, _ = self.run_check([release.copy()])
         self.assertIn('pending=false', output)
         self.assertFalse(mutations)
-        for kwargs in ({'event': 'workflow_dispatch'}, {'attempt': '2'}, {'source_sha': 'b' * 40}):
+        for kwargs in ({'event': 'workflow_dispatch'}, {'attempt': '2'}, {'source_sha': 'b' * 40}, {'ios_sha': 'd' * 40}):
             with self.subTest(**kwargs):
                 output, mutations, _ = self.run_check([release.copy()], **kwargs)
                 self.assertIn('pending=true', output)
@@ -118,6 +128,50 @@ class ReleaseTrackingTest(unittest.TestCase):
             self.assertIn('pending=true', output)
         output, _, _ = self.run_check([release], tag='v3.8.8')
         self.assertIn('pending=true', output)
+
+    def test_downstream_failure_and_missing_finalizer_stop_duplicate_builds(self):
+        for conclusion in ('failure', 'timed_out', 'cancelled', 'action_required', 'success'):
+            with self.subTest(conclusion=conclusion):
+                releases = [self.draft()]
+                output, _, _ = self.run_check(releases)
+                self.assertIn('pending=true', output)
+                # No preflight marker and no finalizer: only the saved run ID.
+                self.assertNotIn(state.BEGIN, releases[0]['body'])
+                output, _, calls = self.run_check(releases, run_id='457', runs={
+                    '456': {'status': 'completed', 'conclusion': conclusion}})
+                self.assertIn('build_blocked=true', output)
+                self.assertIn('/actions/runs/456', releases[0]['body'])
+                self.assertFalse(any('/contents/' in path for path in calls))
+                # Subsequent schedules use the durable failure, without polling.
+                output, mutations, calls = self.run_check(releases, run_id='458')
+                self.assertIn('pending=false', output)
+                self.assertFalse(mutations)
+                self.assertFalse(any('/actions/runs/' in path for path in calls))
+                output, _, _ = self.run_check(releases, run_id='459', event='workflow_dispatch')
+                self.assertIn('pending=true', output)
+                self.assertNotIn(state.BEGIN, releases[0]['body'])
+
+    def test_running_attempt_is_not_duplicated_or_marked_failed(self):
+        releases = [self.draft()]
+        self.run_check(releases)
+        output, mutations, _ = self.run_check(releases, run_id='457', runs={
+            '456': {'status': 'in_progress', 'conclusion': None}})
+        self.assertIn('build_in_progress=true', output)
+        self.assertFalse(mutations)
+        self.assertNotIn(state.BEGIN, releases[0]['body'])
+
+    def test_attempt_in_legacy_duplicate_also_blocks(self):
+        key = tracking.fingerprint('v3.8.7', 'a' * 40, ios_sha='c' * 40)
+        releases = [self.draft(), self.draft(13, actual_tag='untagged-old',
+                    body=state.with_attempt('notes', key, '123'))]
+        output, _, _ = self.run_check(releases, runs={
+            '123': {'status': 'completed', 'conclusion': 'failure'}})
+        self.assertIn('pending=false', output)
+        self.assertIn('/actions/runs/123', releases[0]['body'])
+
+    def test_cannot_start_build_when_attempt_cannot_be_saved(self):
+        with self.assertRaises(HTTPError):
+            self.run_check([self.draft()], write_error=403)
 
     def test_legacy_identity_never_matches_by_title_or_substring_alone(self):
         for release in [self.draft(tag='v3.8.70', actual_tag='untagged-x'),
