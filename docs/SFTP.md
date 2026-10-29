@@ -127,8 +127,17 @@ The current repository is the release target automatically (`GITHUB_REPOSITORY`)
 The workflow needs `contents: write` and `packages: write`, granted in the YAML.
 For a fork, enable GitHub Actions and put the workflow on the default branch.
 No `DOCKER_HUB_USER`, `DOCKER_HUB_PWD`, or original-repository marker is needed.
-Images publish only to `ghcr.io/lovitus/siyuan-unlock-sftp:vX.Y.Z` and `:latest` (lowercase).
+Images publish only to GHCR, with release tags `ghcr.io/lovitus/siyuan-unlock-sftp:vX.Y.Z` and `:latest` (lowercase).
 Configure the GHCR package's visibility if public unauthenticated pulls are wanted.
+
+Docker builds run separately for all four platforms; amd64 and arm64 use native
+runners, and QEMU is limited to ARM32. If the official source provides its ONNX
+artifact helper, CI uses that helper to match and validate the official runtime
+by build-input hash, then passes its immutable digest to Docker. Only a missing
+runtime triggers a build in GHCR, where it is reusable by later releases. No
+release-version list or copied Dockerfile is needed. Per-platform application
+caches persist between runs. The version tag is assembled only after all four
+platforms succeed; `latest` still waits for the complete release workflow.
 
 Example for `lovitus/siyuan-unlock-sftp`:
 

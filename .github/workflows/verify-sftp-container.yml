@@ -46,7 +46,7 @@ jobs:
           BUILD_RUN: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN/jobs" --jq '.jobs[] | select(.name == "build / build" or .name == "docker / build") | .conclusion' | grep -qx success
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN/jobs" --jq '.jobs[] | select(.name == "build / Publish the four-platform image" or .name == "docker / Publish the four-platform image" or .name == "build / build" or .name == "docker / build") | .conclusion' | grep -qx success
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:

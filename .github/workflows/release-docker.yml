@@ -20,10 +20,32 @@ on:
         description: "release version/tag"
         required: true
 
+# Keep builds of the same tag from racing during manual retries.
+concurrency:
+  group: docker-${{ inputs.imageTag || inputs.version }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    name: build
-    runs-on: ubuntu-latest
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            id: amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            id: arm64
+            runner: ubuntu-24.04-arm
+          - platform: linux/arm/v7
+            id: armv7
+            runner: ubuntu-24.04
+          - platform: linux/arm/v8
+            id: armv8
+            runner: ubuntu-24.04
 
     permissions:
       packages: write
@@ -39,6 +61,7 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ -z "$IMAGE_TAG" || "$IMAGE_TAG" =~ ^review-[a-f0-9]{40}$ ]]
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
@@ -75,8 +98,11 @@ jobs:
           cd siyuan
           git status
 
-      - name: Set up QEMU
+      - name: Set up QEMU for ARM32
+        if: startsWith(matrix.platform, 'linux/arm/')
         uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
 
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
@@ -88,12 +114,108 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build the Docker image
+      - name: Resolve the ONNX runtime by its build inputs
+        id: onnx
         working-directory: ${{ github.workspace }}/siyuan-note/siyuan
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
           set -euo pipefail
-          image="ghcr.io/${GITHUB_REPOSITORY,,}"
-          docker buildx build --push --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8 --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$image:${IMAGE_TAG:-$RELEASE_VERSION}" .
+          python3 ../scripts/resolve-docker-onnx.py --context . \
+            --repository "$IMAGE" --platform "$PLATFORM" \
+            --records "$RUNNER_TEMP/docker-onnx" --github-output "$GITHUB_OUTPUT"
+
+      - name: Build the platform image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ github.workspace }}/siyuan-note/siyuan
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ env.IMAGE }}:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.id }}
+          provenance: mode=min
+          build-args: ONNX_IMAGE=${{ steps.onnx.outputs.onnx_image || 'onnx-artifact' }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: |
+            type=registry,ref=b3log/siyuan:buildcache-release-v2-${{ matrix.id }}
+            type=gha,scope=sftp-docker-${{ matrix.id }}
+          cache-to: type=gha,mode=max,scope=sftp-docker-${{ matrix.id }}
+
+      - name: Record the immutable platform image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM_ID: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          mkdir -p "$RUNNER_TEMP/docker-digests"
+          echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/docker-digests/$PLATFORM_ID"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-digest-${{ matrix.id }}
+          path: ${{ runner.temp }}/docker-digests/${{ matrix.id }}
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+      - name: Preserve ONNX resolution and build records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-onnx-${{ github.run_attempt }}-${{ matrix.id }}
+          path: ${{ runner.temp }}/docker-onnx
+          if-no-files-found: ignore
+          retention-days: 7
+
+  merge:
+    name: Publish the four-platform image
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: docker-digest-*
+          path: ${{ runner.temp }}/docker-digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble and check every platform before completing
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           IMAGE_TAG: ${{ inputs.imageTag }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          sources=()
+          for platform in amd64 arm64 armv7 armv8; do
+            source=$(cat "$RUNNER_TEMP/docker-digests/$platform")
+            [[ "$source" == "$image@"* ]]
+            [[ "${source#*@}" =~ ^sha256:[a-f0-9]{64}$ ]]
+            sources+=("$source")
+          done
+          tag="$image:${IMAGE_TAG:-$RELEASE_VERSION}"
+          docker buildx imagetools create --tag "$tag" "${sources[@]}"
+          docker buildx imagetools inspect "$tag" --raw | python3 -c '
+          import json, sys
+          platforms = [m["platform"] for m in json.load(sys.stdin)["manifests"]
+                       if m.get("platform", {}).get("os") == "linux"]
+          actual = [p["os"] + "/" + p["architecture"] +
+                    ("/" + p["variant"] if p["architecture"] == "arm" else "") for p in platforms]
+          expected = {"linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v8"}
+          if len(actual) != 4 or set(actual) != expected:
+              raise SystemExit("Incomplete Docker release: " + repr(actual))
+          print("Published platforms:", ", ".join(actual))'
