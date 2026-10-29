@@ -12,7 +12,8 @@ def frontend(source):
         raise ValueError('expected one frontend Docker build stage')
     start, end = matches[0]
     stage = source[start:end]
-    if re.search(r'(?mi)^COPY kernel/ /kernel/\s*$', stage):
+    # Upstream may already copy the resource that required this workaround.
+    if re.search(r'(?mi)^COPY (?:kernel/ /kernel/|kernel/av/lunar_calendar_data\.json /kernel/av/lunar_calendar_data\.json)\s*$', stage):
         return source
     runs = list(re.finditer(r'(?mi)^RUN\b', stage))
     builds = [run.start() for i, run in enumerate(runs)
@@ -25,23 +26,18 @@ def frontend(source):
 
 def transform(source):
     source = frontend(source)
-    stages = list(re.finditer(r'(?mi)^FROM\s+[^\n]+', source))
-    matches = [(stage.end(), stages[i + 1].start() if i + 1 < len(stages) else len(source))
-               for i, stage in enumerate(stages) if re.search(r'\bAS\s+ocr-build\s*$', stage.group(), re.I)]
-    if not matches:
-        return source
-    if len(matches) != 1:
-        raise ValueError('expected one OCR Docker build stage')
-    start, end = matches[0]
-    stage = source[start:end]
-    installs = list(re.finditer(r'(?m)^RUN apk add --no-cache (?:[^\n]*\\\n)*[^\n]*', stage))
-    if len(installs) != 1:
-        raise ValueError('OCR Docker build dependencies changed')
-    install = installs[0]
-    if 'patch' in install.group().replace('\\', ' ').split():
-        return source
-    at = start + install.start() + len('RUN apk add --no-cache ')
-    return source[:at] + 'patch ' + source[at:]
+    # Repair only the old direct ONNX source build, irrespective of its stage
+    # name. Newer upstream toolchain/artifact stages already provide patch and
+    # must not be required to retain the old OCR package-install instruction.
+    command = re.compile(r'(?m)^RUN python3 /onnxruntime/tools/ci_build/build\.py\b')
+    for match in reversed(list(command.finditer(source))):
+        start = source.rfind('\nFROM ', 0, match.start())
+        stage = source[max(0, start):match.start()]
+        installs = re.findall(r'(?m)^RUN apk add --no-cache (?:[^\n]*\\\n)*[^\n]*', stage)
+        if any('patch' in install.replace('\\', ' ').split() for install in installs):
+            continue
+        source = source[:match.start()] + 'RUN apk add --no-cache patch\n' + source[match.start():]
+    return source
 
 
 if __name__ == '__main__':

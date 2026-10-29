@@ -34,6 +34,7 @@ jobs:
       source_sha: ${{ steps.release.outputs.source_sha }}
       ios_sha: ${{ steps.release.outputs.ios_sha }}
       patch_fingerprint: ${{ steps.release.outputs.patch_fingerprint }}
+      preflight_fingerprint: ${{ steps.release.outputs.preflight_fingerprint }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-source-tools
@@ -62,7 +63,7 @@ jobs:
           VERSION: ${{ needs.check.outputs.version }}
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SOURCE_SHA: ${{ needs.check.outputs.source_sha }}
-          PATCH_FINGERPRINT: ${{ needs.check.outputs.patch_fingerprint }}
+          PATCH_FINGERPRINT: ${{ needs.check.outputs.preflight_fingerprint }}
         run: python3 scripts/release-preflight.py
       - name: Set up upstream Go toolchain
         uses: actions/setup-go@v5
@@ -74,7 +75,7 @@ jobs:
           VERSION: ${{ needs.check.outputs.version }}
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SOURCE_SHA: ${{ needs.check.outputs.source_sha }}
-          PATCH_FINGERPRINT: ${{ needs.check.outputs.patch_fingerprint }}
+          PATCH_FINGERPRINT: ${{ needs.check.outputs.preflight_fingerprint }}
         run: python3 scripts/release-preflight.py --compile
 
   desktop:

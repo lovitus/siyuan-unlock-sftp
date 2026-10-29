@@ -228,6 +228,9 @@ patch/build configuration changes, **Run workflow** and **Re-run jobs** retry.
 Unchanged failed inputs skip builds with a **build blocked** summary and the original
 failure link. Transient failures can be retried manually; they do not retry forever.
 Failure to save the attempt prevents the build from starting.
+Preflight failures use a separate fingerprint without the iOS commit, because
+desktop/container preparation and kernel validation do not consume iOS sources.
+Unrelated iOS branch updates therefore cannot unblock a known preflight failure.
 
 Drafts carry a `sftp-release:<version>` marker. Legacy `untagged-*` drafts require
 both the exact generated title and upstream release URL. A deterministic canonical

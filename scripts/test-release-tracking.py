@@ -160,6 +160,20 @@ class ReleaseTrackingTest(unittest.TestCase):
         self.assertFalse(mutations)
         self.assertNotIn(state.BEGIN, releases[0]['body'])
 
+    def test_ios_updates_do_not_retry_known_core_preflight_failures(self):
+        key = tracking.fingerprint('v3.8.8', 'a' * 40)
+        release = self.draft(tag='v3.8.8', body=f'{state.version_marker("v3.8.8")}\n{state.BEGIN}{key} -->')
+        for ios_sha in ('c' * 40, 'd' * 40):
+            output, mutations, calls = self.run_check([release.copy()], tag='v3.8.8', ios_sha=ios_sha)
+            self.assertIn('build_blocked=true', output)
+            self.assertFalse(mutations)
+            self.assertFalse(any('siyuan-ios' in path or '/contents/' in path for path in calls))
+        for kwargs in ({'source_sha': 'b' * 40}, {'tag': 'v3.8.9'}, {'event': 'workflow_dispatch'}, {'attempt': '2'}):
+            output, _, _ = self.run_check([release.copy()], **dict({'tag': 'v3.8.8'}, **kwargs))
+            self.assertIn('pending=true', output)
+        output, _, _ = self.run_check(tag='v3.8.8')
+        self.assertIn(f'preflight_fingerprint={key}', output)
+
     def test_attempt_in_legacy_duplicate_also_blocks(self):
         key = tracking.fingerprint('v3.8.7', 'a' * 40, ios_sha='c' * 40)
         releases = [self.draft(), self.draft(13, actual_tag='untagged-old',

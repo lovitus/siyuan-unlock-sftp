@@ -109,9 +109,28 @@ class DockerSourceTest(unittest.TestCase):
                   'RUN python3 /onnxruntime/tools/ci_build/build.py\n'
                   'FROM alpine\nRUN apk add --no-cache libstdc++\n')
         result = docker.transform(source)
-        self.assertIn('RUN apk add --no-cache patch cmake git python3', result)
+        self.assertIn('RUN apk add --no-cache patch\nRUN python3 /onnxruntime/tools/ci_build/build.py', result)
         self.assertTrue(result.endswith('RUN apk add --no-cache libstdc++\n'))
         self.assertEqual(docker.transform(result), result)
+        renamed = source.replace('AS ocr-build', 'AS renamed-compiler')
+        self.assertIn('RUN apk add --no-cache patch\nRUN python3', docker.transform(renamed))
+        provided = source.replace('cmake git python3', 'cmake git patch python3')
+        self.assertEqual(docker.transform(provided), provided)
+
+    def test_upstream_onnx_toolchain_and_artifact_stages_are_preserved(self):
+        spec = importlib.util.spec_from_file_location('docker_transform', state.ROOT / 'patches/sftp/transforms/docker.py')
+        docker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docker)
+        source = ('FROM node AS node-build\nWORKDIR /app\nCOPY kernel/ /kernel/\nRUN pnpm run build\n'
+                  'FROM alpine AS onnx-toolchain-native\nRUN apk add --no-cache cmake git patch python3\n'
+                  'FROM onnx-toolchain-native AS onnx-build\nRUN /bin/sh /docker-onnx-build.sh\n'
+                  'FROM ${ONNX_IMAGE} AS onnx-runtime\nFROM go-source AS ocr-build\n'
+                  'RUN go build -o /ocr/siyuan-ocr ./ocr/cmd/ocr-worker\n'
+                  'COPY --from=onnx-runtime /onnx-artifacts/ /ocr/\n')
+        self.assertEqual(docker.transform(source), source)
+        resource_only = source.replace('COPY kernel/ /kernel/',
+                                       'COPY kernel/av/lunar_calendar_data.json /kernel/av/lunar_calendar_data.json')
+        self.assertEqual(docker.transform(resource_only), resource_only)
 
 
 class IOSSourceTest(unittest.TestCase):
