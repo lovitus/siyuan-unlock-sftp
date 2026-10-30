@@ -43,6 +43,7 @@ jobs:
           python3 scripts/test-release-tracking.py
           python3 scripts/test-release-state.py
           python3 scripts/test-release-upload.py
+          python3 scripts/test-android-source.py
           GO111MODULE=off go test ./patches/sftp/transforms
           node patches/sftp/transforms/frontend.test.mjs
       - name: Check upstream published release

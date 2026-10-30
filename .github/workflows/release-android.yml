@@ -72,8 +72,7 @@ jobs:
           git clone --branch "$RELEASE_VERSION" --depth=1 https://github.com/siyuan-note/siyuan-android.git
           cd siyuan-android
 
-          git apply --ignore-whitespace --verbose ${{ github.workspace }}/siyuan-note/patches/siyuan-android/debug-build.patch
-          git apply --ignore-whitespace --verbose ${{ github.workspace }}/siyuan-note/patches/siyuan-android/dual-package.patch
+          python3 "${{ github.workspace }}/siyuan-note/patches/sftp/transforms/android.py" .
 
           mkdir -p app/src/main/assets/
           mkdir -p app/libs/
