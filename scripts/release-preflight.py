@@ -11,6 +11,8 @@ from release_state import ROOT, clear_failure, record_failure
 def compile_kernel():
     source = Path(os.environ['RUNNER_TEMP']) / 'sftp-desktop'
     commands = [['go', 'test', '-count=1', '-timeout', '120s', './sftpcloud'],
+                ['go', 'test', '-tags', 'fts5 sqlcipher', '-count=1', '-timeout', '60s',
+                 '-run', '^TestSFTPConfigRequestValidation$', './api'],
                 ['go', 'build', '-tags', 'fts5 sqlcipher', '-o',
                  str(source.parent / 'sftp-kernel-preflight'), '.']]
     for command in commands:
@@ -21,11 +23,12 @@ def compile_kernel():
     if result.returncode:
         # Test failures and compiler diagnostics are compatibility failures. Download,
         # runner and toolchain failures stay retryable on the next schedule.
-        if re.search(r'(?m)^.+\.go:\d+:\d+:|^--- FAIL:|updates to go.mod needed', result.stdout):
+        if re.search(r'(?m)^.+\.go:\d+:\d+:|^--- FAIL:|^panic:|updates to go.mod needed', result.stdout):
             repo = os.environ['GITHUB_REPOSITORY']
             record_failure(repo, os.environ['VERSION'], os.environ['PATCH_FINGERPRINT'],
                            f'https://github.com/{repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}',
-                           os.environ['EXPECTED_SOURCE_SHA'])
+                           os.environ['EXPECTED_SOURCE_SHA'],
+                           reason='SFTP test timeout' if 'panic: test timed out' in result.stdout else 'Kernel/SFTP validation failed')
     else:
         clear_failure(os.environ['GITHUB_REPOSITORY'], os.environ['VERSION'])
     return result.returncode

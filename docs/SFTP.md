@@ -216,9 +216,19 @@ Go and TypeScript AST transforms locate the provider selector, settings mount,
 configuration fields and repository hooks by structure. SFTP form persistence,
 API handlers, configuration and provider implementation live in independent
 files. Existing upstream S3/WebDAV rendering and API authorization remain intact.
+The SFTP configuration endpoint binds its typed request with Gin directly, without
+depending on upstream's internal JSON argument helpers.
 The config adapter selects the pointer or immutable `ConfSection` interface by
 its actual type. Dependency additions match module names and preserve upstream
 versions. Missing or ambiguous hooks stop preparation with exit 42.
+
+Source preparation also detects the upstream DejaVu snapshot deadlock where
+`DownloadTagIndex` calls `AddTag` while both acquire the same repository mutex.
+Only affected code shapes receive a local copy of the release's selected module
+under `kernel/sftp-deps/dejavu`: both public operations retain their locks and
+share an internal tag-writing helper. The global module cache stays untouched.
+Older implementations and upstream repairs need no replacement. Container builds
+copy this local dependency before downloading Go modules.
 
 All workflows install the host Go/Node tools and a locked TypeScript parser.
 Desktop/container preparation, real upstream settings regression checks and a
@@ -240,6 +250,8 @@ Failure to save the attempt prevents the build from starting.
 Preflight failures use a separate fingerprint without the iOS commit, because
 desktop/container preparation and kernel validation do not consume iOS sources.
 Unrelated iOS branch updates therefore cannot unblock a known preflight failure.
+SFTP test panics and test timeouts are recorded immediately with this preflight
+fingerprint, just like compiler and assertion failures.
 
 Drafts carry a `sftp-release:<version>` marker. Legacy `untagged-*` drafts require
 both the exact generated title and upstream release URL. A deterministic canonical

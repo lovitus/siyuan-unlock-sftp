@@ -82,6 +82,10 @@ func main() {
 			os.Exit(42)
 		}
 	}()
+	if len(os.Args) == 3 && os.Args[1] == "--dejavu" {
+		repairDejavuDirectory(os.Args[2])
+		return
+	}
 	if len(os.Args) != 2 {
 		panic("usage: apply-source source-root")
 	}

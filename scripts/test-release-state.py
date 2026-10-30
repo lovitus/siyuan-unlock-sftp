@@ -78,6 +78,8 @@ class ConflictStateTest(unittest.TestCase):
         for code, log, blocked in [(1, 'model/sftp.go:42:2: undefined: changedAPI\n', True),
                                     (1, 'go: downloading dependency: dial tcp: timeout\n', False),
                                     (1, '--- FAIL: TestIndependentProcessSync (1.00s)\n', True),
+                                    (1, 'panic: test timed out after 2m0s\n\trunning tests:\n\t\tTestSnapshotSurvivesPurgeAndRestores (2m0s)\n', True),
+                                    (1, 'panic: runtime error: invalid memory address\n', True),
                                     (0, '', False)]:
             with self.subTest(log=log), patch.dict(os.environ, env), \
                  patch.object(preflight.subprocess, 'run', return_value=Mock(returncode=code, stdout=log)), \
@@ -89,6 +91,20 @@ class ConflictStateTest(unittest.TestCase):
 
 
 class DockerSourceTest(unittest.TestCase):
+    def test_local_dependency_is_copied_before_download_only_when_needed(self):
+        spec = importlib.util.spec_from_file_location('docker_transform', state.ROOT / 'patches/sftp/transforms/docker.py')
+        docker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(docker)
+        source = ('FROM node AS node-build\nCOPY kernel/ /kernel/\nRUN pnpm run build\n'
+                  'FROM golang AS go-source\nWORKDIR /kernel\nADD kernel/go.* .\n'
+                  'RUN go mod download\nADD kernel/ .\n')
+        self.assertEqual(docker.transform(source), source)
+        result = docker.transform(source, local_dejavu=True)
+        self.assertIn('COPY kernel/sftp-deps/ /kernel/sftp-deps/\nRUN go mod download', result)
+        self.assertEqual(docker.transform(result, local_dejavu=True), result)
+        with self.assertRaises(ValueError):
+            docker.transform(source.replace('RUN go mod download', 'RUN changed'), local_dejavu=True)
+
     def test_shared_resources_are_only_added_to_frontend_stage(self):
         spec = importlib.util.spec_from_file_location('docker_transform', state.ROOT / 'patches/sftp/transforms/docker.py')
         docker = importlib.util.module_from_spec(spec)

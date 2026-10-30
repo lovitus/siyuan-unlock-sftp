@@ -24,8 +24,15 @@ def frontend(source):
     return source[:at] + 'COPY kernel/ /kernel/\n' + source[at:]
 
 
-def transform(source):
+def transform(source, local_dejavu=False):
     source = frontend(source)
+    if local_dejavu:
+        copy = 'COPY kernel/sftp-deps/ /kernel/sftp-deps/\n'
+        if copy not in source:
+            download = re.compile(r'(?m)^RUN go mod download\s*$')
+            if len(download.findall(source)) != 1:
+                raise ValueError('Docker Go dependency download contract changed')
+            source = download.sub(lambda match: copy + match.group(), source)
     # Repair only the old direct ONNX source build, irrespective of its stage
     # name. Newer upstream toolchain/artifact stages already provide patch and
     # must not be required to retain the old OCR package-install instruction.
@@ -43,7 +50,7 @@ def transform(source):
 if __name__ == '__main__':
     try:
         path = Path(sys.argv[1]) / 'Dockerfile'
-        path.write_text(transform(path.read_text()))
+        path.write_text(transform(path.read_text(), (path.parent / 'kernel/sftp-deps/dejavu/go.mod').is_file()))
     except (ValueError, OSError) as error:
         print('PATCH_CONFLICT:', error, file=sys.stderr)
         sys.exit(42)

@@ -38,10 +38,10 @@ else
  transform_dir=$(mktemp -d)
  trap 'rm -rf "$transform_dir"' EXIT
  GO111MODULE=off GOOS= GOARCH= CGO_ENABLED=0 GOTOOLCHAIN=local go build \
-  -o "$transform_dir/apply-source.exe" "$patch_root/patches/sftp/transforms/account.go" "$patch_root/patches/sftp/transforms/source.go"
+  -o "$transform_dir/apply-source.exe" "$patch_root/patches/sftp/transforms/account.go" "$patch_root/patches/sftp/transforms/source.go" "$patch_root/patches/sftp/transforms/dejavu.go"
  "$transform_dir/apply-source.exe" .
  node "$patch_root/patches/sftp/transforms/frontend.mjs" .
- python3 "$patch_root/patches/sftp/transforms/dependencies.py" .
+ python3 "$patch_root/patches/sftp/transforms/dependencies.py" . "$transform_dir/apply-source.exe"
  for component in api apicontract conf model; do
   cp "$patch_root/overlays/kernel/$component/"*.go "kernel/$component/"
  done
