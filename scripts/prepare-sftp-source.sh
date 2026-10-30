@@ -4,7 +4,7 @@ version="${1:?version required}"
 source_dir="${2:?source directory required}"
 patch_root="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
-git clone --branch "$version" --depth=1 https://github.com/siyuan-note/siyuan.git "$source_dir"
+python3 "$patch_root/scripts/clone-release-source.py" "$version" "$source_dir"
 cd "$source_dir"
 if [[ -n "${EXPECTED_SOURCE_SHA:-}" && "$(git rev-parse HEAD)" != "$EXPECTED_SOURCE_SHA" ]]; then
  echo 'Upstream tag moved after detection; retry with its new commit' >&2

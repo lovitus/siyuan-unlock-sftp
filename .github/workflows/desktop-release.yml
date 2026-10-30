@@ -2,6 +2,10 @@ name: CD For SiYuan Unlock
 on:
   workflow_call:
     inputs:
+      target:
+        description: "Artifact suffix to rebuild, or all"
+        type: string
+        default: all
       artifactsOnly:
         description: "Store build artifacts without updating a release"
         type: boolean
@@ -14,6 +18,11 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      target:
+        description: "Artifact suffix to rebuild, or all"
+        type: choice
+        default: all
+        options: [all, linux.tar.gz, linux.AppImage, linux-arm64.tar.gz, mac.dmg, mac-arm64.dmg, win.exe]
       artifactsOnly:
         description: "Store build artifacts without updating a release"
         type: boolean
@@ -33,66 +42,33 @@ permissions:
   contents: write
 
 jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.select.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: select
+        env:
+          TARGET: ${{ inputs.target || 'all' }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          with open('scripts/desktop-release-matrix.json') as source:
+              matrix = json.load(source)
+          if os.environ['TARGET'] != 'all':
+              matrix['config'] = [item for item in matrix['config'] if item['suffix'] == os.environ['TARGET']]
+              if len(matrix['config']) != 1:
+                  raise SystemExit('Unknown desktop build target')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('value=' + json.dumps(matrix) + '\n')
+          PYTHON
   build:
+    needs: matrix
     runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
-      matrix:
-        config:
-          - os: ubuntu-22.04
-            kernel_path: "../app/kernel-linux/SiYuan-Kernel"
-            build_mode: "-buildmode=pie"
-            build_args: "-s -w -extldflags -static-pie -X github.com/siyuan-note/siyuan/kernel/util.Mode=prod"
-            electron_args: "dist-linux"
-            goos: "linux"
-            goarch: "amd64"
-            cc_path: "x86_64-linux-musl-cross/bin/x86_64-linux-musl-gcc"
-            suffix: "linux.tar.gz"
-          - os: ubuntu-22.04
-            name: ubuntu build linux.AppImage
-            kernel_path: "../app/kernel-linux/SiYuan-Kernel"
-            build_mode: "-buildmode=pie"
-            build_args: "-s -w -extldflags -static-pie -X github.com/siyuan-note/siyuan/kernel/util.Mode=prod"
-            electron_args: "dist-linux"
-            goos: "linux"
-            goarch: "amd64"
-            cc_path: "x86_64-linux-musl-cross/bin/x86_64-linux-musl-gcc"
-            suffix: "linux.AppImage"
-          - os: ubuntu-22.04
-            kernel_path: "../app/kernel-linux-arm64/SiYuan-Kernel"
-            build_mode: "-buildmode=pie"
-            build_args: "-s -w -extldflags -static-pie -X github.com/siyuan-note/siyuan/kernel/util.Mode=prod"
-            electron_args: "dist-linux-arm64"
-            goos: "linux"
-            goarch: "arm64"
-            cc_path: "aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc"
-            suffix: "linux-arm64.tar.gz"
-          - os: macos-latest
-            kernel_path: "../app/kernel-darwin/SiYuan-Kernel"
-            build_mode: ""
-            build_args: "-s -w -X github.com/siyuan-note/siyuan/kernel/util.Mode=prod"
-            electron_args: "dist-darwin"
-            goos: "darwin"
-            goarch: "amd64"
-            suffix: "mac.dmg"
-          - os: macos-latest
-            kernel_path: "../app/kernel-darwin-arm64/SiYuan-Kernel"
-            build_mode: ""
-            build_args: "-s -w -X github.com/siyuan-note/siyuan/kernel/util.Mode=prod"
-            electron_args: "dist-darwin-arm64"
-            goos: "darwin"
-            goarch: "arm64"
-            suffix: "mac-arm64.dmg"
-          - os: windows-latest
-            kernel_path: "../app/kernel/SiYuan-Kernel.exe"
-            build_mode: ""
-            build_args: "-s -w -H=windowsgui -X github.com/siyuan-note/siyuan/kernel/util.Mode=prod"
-            electron_args: "dist"
-            goos: "windows"
-            gobin: "bin"
-            mingwsys: "MINGW64"
-            goarch: "amd64"
-            suffix: "win.exe"
+      matrix: ${{ fromJSON(needs.matrix.outputs.value) }}
 
     steps:
 
